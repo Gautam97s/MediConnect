@@ -1,0 +1,5 @@
+{
+  "/doctor-dashboard": [
+    "static/chunks/pages/doctor-dashboard.js"
+  ]
+}

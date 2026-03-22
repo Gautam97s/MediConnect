@@ -1,0 +1,6 @@
+{
+  "version": 3,
+  "sources": [],
+  "sections": [
+    {"offset": {"line": 10, "column": 0}, "map": {"version":3,"sources":["file:///C:/Gautam/MediConnect/frontend/src/pages/_app.jsx"],"sourcesContent":["import '../styles/globals.css';\n\nexport default function MyApp({ Component, pageProps }) {\n  return <Component {...pageProps} />;\n}\n"],"names":["MyApp","Component","pageProps"],"mappings":";;;;;;;AAEe,SAASA,MAAM,EAAEC,SAAS,EAAEC,SAAS,EAAE;IACpD,qBAAO,qKAACD;QAAW,GAAGC,SAAS;;;;;;AACjC"}}]
+}

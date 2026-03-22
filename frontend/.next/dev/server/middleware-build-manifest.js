@@ -1,0 +1,72 @@
+globalThis.__BUILD_MANIFEST = {
+  "pages": {
+    "/": [
+      "static/chunks/node_modules_next_dist_compiled_0o6l_m6._.js",
+      "static/chunks/node_modules_next_dist_shared_lib_0vy467f._.js",
+      "static/chunks/node_modules_next_dist_client_00_u_l7._.js",
+      "static/chunks/node_modules_next_dist_0k8zr~w._.js",
+      "static/chunks/node_modules_next_0k13yvq._.js",
+      "static/chunks/node_modules_react-dom_0bruynb._.js",
+      "static/chunks/node_modules_0asszc3._.js",
+      "static/chunks/[root-of-the-server]__021eqv0._.js",
+      "static/chunks/src_pages_index_07xvfw~._.js",
+      "static/chunks/turbopack-src_pages_index_10jnwze._.js"
+    ],
+    "/_app": [
+      "static/chunks/node_modules_next_dist_compiled_0o6l_m6._.js",
+      "static/chunks/node_modules_next_dist_shared_lib_0~pg0mt._.js",
+      "static/chunks/node_modules_next_dist_client_0pe1dg-._.js",
+      "static/chunks/node_modules_next_dist_0k8zr~w._.js",
+      "static/chunks/node_modules_react-dom_0bruynb._.js",
+      "static/chunks/node_modules_11l9xip._.js",
+      "static/chunks/[root-of-the-server]__0cv6zn3._.js",
+      "static/chunks/src_styles_globals_0fuav90.css",
+      "static/chunks/src_pages__app_07xvfw~._.js",
+      "static/chunks/turbopack-src_pages__app_0plcaj-._.js"
+    ],
+    "/doctor-dashboard": [
+      "static/chunks/node_modules_next_dist_compiled_0o6l_m6._.js",
+      "static/chunks/node_modules_next_dist_shared_lib_12bi_n7._.js",
+      "static/chunks/node_modules_next_dist_client_0pe1dg-._.js",
+      "static/chunks/node_modules_next_dist_0k8zr~w._.js",
+      "static/chunks/node_modules_next_head_0ii._yd.js",
+      "static/chunks/node_modules_react-dom_0bruynb._.js",
+      "static/chunks/node_modules_0.5_l8x._.js",
+      "static/chunks/[root-of-the-server]__101rcfw._.js",
+      "static/chunks/src_pages_doctor-dashboard_07xvfw~._.js",
+      "static/chunks/turbopack-src_pages_doctor-dashboard_0pslw28._.js"
+    ],
+    "/patient-dashboard": [
+      "static/chunks/node_modules_next_dist_compiled_0o6l_m6._.js",
+      "static/chunks/node_modules_next_dist_shared_lib_0vy467f._.js",
+      "static/chunks/node_modules_next_dist_client_00_u_l7._.js",
+      "static/chunks/node_modules_next_dist_0k8zr~w._.js",
+      "static/chunks/node_modules_next_0k13yvq._.js",
+      "static/chunks/node_modules_react-dom_0bruynb._.js",
+      "static/chunks/node_modules_0.cfj9w._.js",
+      "static/chunks/[root-of-the-server]__0hf7ie3._.js",
+      "static/chunks/src_pages_patient-dashboard_07xvfw~._.js",
+      "static/chunks/turbopack-src_pages_patient-dashboard_0x9m-jw._.js"
+    ],
+    "/pharmacy": [
+      "static/chunks/node_modules_next_dist_compiled_0o6l_m6._.js",
+      "static/chunks/node_modules_next_dist_shared_lib_0vy467f._.js",
+      "static/chunks/node_modules_next_dist_client_00_u_l7._.js",
+      "static/chunks/node_modules_next_dist_0k8zr~w._.js",
+      "static/chunks/node_modules_next_0k13yvq._.js",
+      "static/chunks/node_modules_react-dom_0bruynb._.js",
+      "static/chunks/node_modules_0xee5hx._.js",
+      "static/chunks/[root-of-the-server]__03jq9cq._.js",
+      "static/chunks/src_pages_pharmacy_07xvfw~._.js",
+      "static/chunks/turbopack-src_pages_pharmacy_0gq53sd._.js"
+    ]
+  },
+  "devFiles": [],
+  "polyfillFiles": [],
+  "lowPriorityFiles": [
+    "static/development/_buildManifest.js",
+    "static/development/_ssgManifest.js",
+    "static/development/_clientMiddlewareManifest.js"
+  ],
+  "rootMainFiles": []
+};

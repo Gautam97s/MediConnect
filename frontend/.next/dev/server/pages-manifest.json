@@ -1,8 +1,0 @@
-{
-  "/": "pages/index.js",
-  "/_app": "pages/_app.js",
-  "/_document": "pages/_document.js",
-  "/doctor-dashboard": "pages/doctor-dashboard.js",
-  "/patient-dashboard": "pages/patient-dashboard.js",
-  "/pharmacy": "pages/pharmacy.js"
-}

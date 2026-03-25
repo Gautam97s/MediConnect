@@ -1,5 +1,5 @@
 import Link from 'next/link';
-import { HeartPulse, User, Calendar, ShoppingBag, FileText } from 'lucide-react';
+import { HeartPulse, User, Calendar, ShoppingBag, FileText, Activity } from 'lucide-react';
 
 export default function PatientSidebar({ activePage }) {
   const navItems = [
@@ -12,11 +12,13 @@ export default function PatientSidebar({ activePage }) {
 
   return (
     <aside className="w-64 bg-white m-3 rounded-[2rem] shadow-[0_8px_30px_rgb(0,0,0,0.04)] flex flex-col py-8 px-6 z-10 shrink-0">
-      <div className="flex items-center gap-2 mb-12 px-2">
-         <div className="w-8 h-8 relative flex items-center justify-center">
-            <div className="absolute w-4 h-4 bg-teal-600 rounded-sm top-0 left-0"></div>
-            <div className="absolute w-4 h-4 bg-teal-600 rounded-sm bottom-0 right-0"></div>
-            <div className="absolute w-4 h-4 bg-teal-600 rounded-sm top-0 right-0 rotate-45 scale-75"></div>
+      <div className="flex items-center gap-3 mb-10 px-2 mt-2">
+         <div className="w-10 h-10 bg-gradient-to-br from-teal-50 to-teal-100 rounded-xl flex items-center justify-center text-teal-600 border border-teal-200/50 shadow-sm shrink-0">
+            <Activity size={24} strokeWidth={2.5} />
+         </div>
+         <div className="flex flex-col">
+            <span className="font-bold text-[17px] text-stone-900 leading-tight tracking-tight">MediConnect</span>
+            <span className="text-[11px] font-semibold text-teal-600 md:tracking-wider uppercase">Patient</span>
          </div>
       </div>
 

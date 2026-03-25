@@ -62,7 +62,7 @@ export default function PatientDashboard() {
              <div className="bg-white rounded-[2rem] p-8 shadow-[0_8px_30px_rgb(0,0,0,0.04)] flex-1 overflow-hidden flex flex-col">
                <h3 className="text-lg font-bold text-stone-900 mb-6 flex items-center justify-between">
                  Active Medications
-                 <Link href="/pharmacy"><span className="text-sm text-teal-600 cursor-pointer font-semibold uppercase tracking-wider hover:underline">Refill Options</span></Link>
+                 <Link href="/patient/pharmacy"><span className="text-sm text-teal-600 cursor-pointer font-semibold uppercase tracking-wider hover:underline">Refill Options</span></Link>
                </h3>
 
                {/* List */}

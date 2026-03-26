@@ -1,0 +1,77 @@
+package com.mediconnect.appointment.service;
+
+import com.mediconnect.appointment.model.Appointment;
+import com.mediconnect.appointment.model.AppointmentStatus;
+import com.mediconnect.appointment.repository.AppointmentRepository;
+import org.springframework.http.HttpStatus;
+import org.springframework.stereotype.Service;
+import org.springframework.util.StringUtils;
+import org.springframework.transaction.annotation.Transactional;
+import org.springframework.web.server.ResponseStatusException;
+
+import java.util.List;
+
+@Service
+public class AppointmentServiceImpl implements AppointmentService {
+
+    private final AppointmentRepository appointmentRepository;
+
+    public AppointmentServiceImpl(AppointmentRepository appointmentRepository) {
+        this.appointmentRepository = appointmentRepository;
+    }
+
+    @Override
+    public List<Appointment> getAllAppointments(Long doctorId, String patientName) {
+        if (doctorId != null) {
+            return appointmentRepository.findByDoctorId(doctorId);
+        }
+        if (StringUtils.hasText(patientName)) {
+            return appointmentRepository.findByPatientNameContainingIgnoreCase(patientName.trim());
+        }
+        return appointmentRepository.findAll();
+    }
+
+    @Override
+    public Appointment getAppointmentById(Long id) {
+        return appointmentRepository.findById(id)
+                .orElseThrow(() -> new ResponseStatusException(
+                        HttpStatus.NOT_FOUND,
+                        "Appointment not found with id: " + id
+                ));
+    }
+
+    @Override
+    @Transactional
+    public Appointment createAppointment(Appointment appointment) {
+        appointment.setId(null);
+        if (appointment.getStatus() == null) {
+            appointment.setStatus(AppointmentStatus.SCHEDULED);
+        }
+        return appointmentRepository.save(appointment);
+    }
+
+    @Override
+    @Transactional
+    public Appointment updateAppointment(Long id, Appointment appointmentDetails) {
+        Appointment existing = getAppointmentById(id);
+
+        existing.setPatientName(appointmentDetails.getPatientName());
+        existing.setDoctorId(appointmentDetails.getDoctorId());
+        existing.setAppointmentDate(appointmentDetails.getAppointmentDate());
+        existing.setReason(appointmentDetails.getReason());
+
+        if (appointmentDetails.getStatus() != null) {
+            existing.setStatus(appointmentDetails.getStatus());
+        }
+
+        return appointmentRepository.save(existing);
+    }
+
+    @Override
+    @Transactional
+    public Appointment cancelAppointment(Long id) {
+        Appointment existing = getAppointmentById(id);
+        existing.setStatus(AppointmentStatus.CANCELLED);
+        return appointmentRepository.save(existing);
+    }
+}

@@ -5,9 +5,9 @@ spring:
   application:
     name: mediconnect-backend
   datasource:
-    url: jdbc:postgresql://localhost:5432/mediconnect
-    username: myuser
-    password: mypassword
+    url: ${DATABASE_URL:jdbc:postgresql://localhost:5432/mediconnect}
+    username: ${DATABASE_USERNAME:myuser}
+    password: ${DATABASE_PASSWORD:mypassword}
     driver-class-name: org.postgresql.Driver
   jpa:
     hibernate:

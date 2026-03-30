@@ -4,6 +4,14 @@ server:
 spring:
   application:
     name: mediconnect-backend
+  data:
+    redis:
+      host: ${REDIS_HOST:localhost}
+      port: ${REDIS_PORT:6379}
+      username: ${REDIS_USERNAME:}
+      password: ${REDIS_PASSWORD:}
+      ssl:
+        enabled: ${REDIS_SSL:false}
   datasource:
     url: ${DATABASE_URL:jdbc:postgresql://localhost:5432/mediconnect}
     username: ${DATABASE_USERNAME:myuser}
@@ -19,4 +27,9 @@ spring:
 
 jwt:
   secret: 404E635266556A586E3272357538782F413F4428472B4B6250645367566B5970
-  expiration: 86400000
+  expiration: 518400000
+
+auth:
+  refresh:
+    expiration-ms: ${AUTH_REFRESH_EXPIRATION_MS:518400000}
+    prefix: ${AUTH_REFRESH_PREFIX:auth:refresh:}

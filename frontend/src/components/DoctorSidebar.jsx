@@ -1,7 +1,17 @@
 import Link from 'next/link';
+import { useRouter } from 'next/router';
 import { LayoutDashboard, Calendar, Users, FileText, MessageSquare, Stethoscope } from 'lucide-react';
+import { useAuth } from '../features/auth/hooks/useAuth';
 
 export default function DoctorSidebar({ activePage }) {
+  const router = useRouter();
+  const { logout } = useAuth();
+
+  const handleLogout = () => {
+    logout();
+    router.push('/auth/login');
+  };
+
   const navItems = [
     { name: 'Dashboard', href: '/doctor/dashboard', icon: LayoutDashboard, id: 'dashboard' },
     { name: 'Schedule', href: '/doctor/schedule', icon: Calendar, id: 'schedule' },
@@ -43,10 +53,19 @@ export default function DoctorSidebar({ activePage }) {
          })}
       </nav>
 
-      <div className="mt-auto flex justify-center pb-4">
-         <div className="w-14 h-14 rounded-full overflow-hidden shrink-0 shadow-md border-2 border-white hover:border-stone-200 transition-colors cursor-pointer">
-            <img src="https://images.unsplash.com/photo-1559839734-2b71ea197ec2?w=100&q=80" alt="Avatar" className="w-full h-full object-cover"/>
+      <div className="mt-auto space-y-4 pb-2">
+         <div className="flex justify-center">
+           <div className="w-14 h-14 rounded-full overflow-hidden shrink-0 shadow-md border-2 border-white hover:border-stone-200 transition-colors cursor-pointer">
+              <img src="https://images.unsplash.com/photo-1559839734-2b71ea197ec2?w=100&q=80" alt="Avatar" className="w-full h-full object-cover"/>
+           </div>
          </div>
+         <button
+           type="button"
+           onClick={handleLogout}
+           className="w-full rounded-xl border border-stone-200 px-3 py-2 text-xs font-bold uppercase tracking-wider text-stone-600 hover:bg-stone-50 hover:text-stone-900"
+         >
+           Logout
+         </button>
       </div>
     </aside>
   );

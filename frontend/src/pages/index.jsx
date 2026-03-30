@@ -21,7 +21,7 @@ export default function Home() {
           <a href="#pharmacy" className="hover:text-stone-900 transition-colors">Apothecary</a>
         </div>
         <div>
-           <Link href="/patient/dashboard" className="bg-stone-900 hover:bg-black text-white px-6 py-2.5 rounded-full text-sm font-bold shadow-md transition-all">
+            <Link href="/patient/dashboard" className="bg-stone-900 hover:bg-black text-white px-6 py-2.5 rounded-full text-sm font-bold shadow-md transition-all">
              Client Portal
            </Link>
         </div>
@@ -76,7 +76,7 @@ export default function Home() {
                <li key={i} className="flex items-center gap-3 font-semibold text-stone-800"><CheckCircle2 className="text-sky-500" size={20}/> {item}</li>
              ))}
            </ul>
-           <Link href="/patient/dashboard" className="inline-flex items-center gap-2 text-sky-600 font-bold hover:text-sky-700 transition-colors">
+            <Link href="/patient/dashboard" className="inline-flex items-center gap-2 text-sky-600 font-bold hover:text-sky-700 transition-colors">
               Access Patient Hub <ArrowRight size={18}/>
            </Link>
         </div>
@@ -108,7 +108,7 @@ export default function Home() {
                <li key={i} className="flex items-center gap-3 font-semibold text-stone-800"><ShieldCheck className="text-teal-500" size={20}/> {item}</li>
              ))}
            </ul>
-           <Link href="/doctor/dashboard" className="inline-flex items-center gap-2 px-6 py-3 bg-stone-900 text-white rounded-full font-bold hover:bg-stone-800 transition-colors shadow-md">
+            <Link href="/doctor/dashboard" className="inline-flex items-center gap-2 px-6 py-3 bg-stone-900 text-white rounded-full font-bold hover:bg-stone-800 transition-colors shadow-md">
               Launch Provider Workspace
            </Link>
         </div>

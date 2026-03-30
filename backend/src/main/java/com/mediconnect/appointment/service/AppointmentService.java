@@ -15,4 +15,6 @@ public interface AppointmentService {
     Appointment updateAppointment(Long id, Appointment appointmentDetails);
 
     Appointment cancelAppointment(Long id);
+
+    void clearAllAndReset();
 }

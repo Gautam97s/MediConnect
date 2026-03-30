@@ -33,6 +33,12 @@ public class AppointmentServiceImpl implements AppointmentService {
 
     @Override
     public Appointment getAppointmentById(Long id) {
+        if (id == null) {
+            throw new ResponseStatusException(
+                    HttpStatus.BAD_REQUEST,
+                    "Appointment id cannot be null"
+            );
+        }
         return appointmentRepository.findById(id)
                 .orElseThrow(() -> new ResponseStatusException(
                         HttpStatus.NOT_FOUND,
@@ -73,5 +79,11 @@ public class AppointmentServiceImpl implements AppointmentService {
         Appointment existing = getAppointmentById(id);
         existing.setStatus(AppointmentStatus.CANCELLED);
         return appointmentRepository.save(existing);
+    }
+
+    @Override
+    @Transactional
+    public void clearAllAndReset() {
+        appointmentRepository.truncateAndResetId();
     }
 }

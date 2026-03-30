@@ -46,4 +46,10 @@ public class AppointmentController {
     public Appointment cancelAppointment(@PathVariable Long id) {
         return appointmentService.cancelAppointment(id);
     }
+
+    @DeleteMapping("/all")
+    @ResponseStatus(HttpStatus.NO_CONTENT)
+    public void clearAllAppointments() {
+        appointmentService.clearAllAndReset();
+    }
 }

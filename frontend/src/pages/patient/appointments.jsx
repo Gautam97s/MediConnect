@@ -14,7 +14,11 @@ import {
   Video
 } from 'lucide-react';
 import { CATEGORIES, DOCTORS } from '../../data/bookingData';
-import { cancelAppointment, fetchAppointments } from '../../api/appointments';
+import { 
+  createAppointment, 
+  getAllAppointments, 
+  deleteAppointment 
+} from '../../features/appointments/api/appointmentApi';
 
 function parseSlotToDate(timeSlot) {
   const now = new Date();
@@ -282,7 +286,7 @@ export default function Appointments() {
     setLoading(true);
     setError('');
     try {
-      const data = await fetchAppointments();
+      const data = await getAllAppointments();
       setAppointments(Array.isArray(data) ? data : []);
     } catch (err) {
       setError(err?.response?.data?.message || 'Failed to load appointments from backend.');
@@ -309,7 +313,7 @@ export default function Appointments() {
     setAppointments((prev) => prev.filter((item) => item.id !== id));
 
     try {
-      await cancelAppointment(id);
+      await deleteAppointment(id);
     } catch (err) {
       setAppointments(currentAppointments);
       setError(err?.response?.data?.message || 'Could not cancel appointment.');

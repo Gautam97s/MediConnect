@@ -106,6 +106,24 @@ export default function PaymentPage() {
     return '';
   };
 
+  const handleExpiryChange = (e) => {
+    let value = e.target.value.replace(/\D/g, '').slice(0, 4);
+    
+    // Auto-insert slash after 2 digits
+    if (value.length >= 2) {
+      value = value.slice(0, 2) + '/' + value.slice(2);
+    }
+    
+    setExpiry(value.slice(0, 5));
+  };
+
+  const handleKeyDown = (e) => {
+    if (e.key === 'Enter' && !isPaying && !isDone) {
+      e.preventDefault();
+      handlePayment();
+    }
+  };
+
   const handlePayment = async () => {
     const validationError = validate();
     if (validationError) {
@@ -185,6 +203,7 @@ export default function PaymentPage() {
                 <input
                   value={cardName}
                   onChange={(e) => setCardName(e.target.value)}
+                  onKeyDown={handleKeyDown}
                   className="w-full border border-stone-300 rounded-xl px-4 py-3"
                   placeholder="John Doe"
                 />
@@ -195,6 +214,7 @@ export default function PaymentPage() {
                 <input
                   value={cardNumber}
                   onChange={(e) => setCardNumber(formatCardNumber(e.target.value))}
+                  onKeyDown={handleKeyDown}
                   className="w-full border border-stone-300 rounded-xl px-4 py-3"
                   placeholder="4242 4242 4242 4242"
                   inputMode="numeric"
@@ -207,9 +227,11 @@ export default function PaymentPage() {
                   <label className="block text-sm font-semibold text-stone-700 mb-2">Expiry (MM/YY)</label>
                   <input
                     value={expiry}
-                    onChange={(e) => setExpiry(e.target.value.slice(0, 5))}
+                    onChange={handleExpiryChange}
+                    onKeyDown={handleKeyDown}
                     className="w-full border border-stone-300 rounded-xl px-4 py-3"
                     placeholder="12/28"
+                    maxLength={5}
                   />
                 </div>
                 <div>
@@ -217,6 +239,7 @@ export default function PaymentPage() {
                   <input
                     value={cvv}
                     onChange={(e) => setCvv(e.target.value.replace(/\D/g, '').slice(0, 4))}
+                    onKeyDown={handleKeyDown}
                     className="w-full border border-stone-300 rounded-xl px-4 py-3"
                     placeholder="123"
                   />

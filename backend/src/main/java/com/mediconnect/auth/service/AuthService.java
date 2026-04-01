@@ -56,15 +56,24 @@ public class AuthService {
     }
 
     public AuthResponse register(RegisterRequest request) {
-        if (authUserRepository.existsByEmail(request.getEmail().toLowerCase())) {
+        String normalizedEmail = request.getEmail().trim().toLowerCase();
+        UserRole role = parseRole(request.getRole());
+        String licenseNumber = normalizeLicenseNumber(request.getLicenseNumber());
+
+        if (authUserRepository.existsByEmail(normalizedEmail)) {
             throw new ResponseStatusException(HttpStatus.CONFLICT, "Email already registered");
+        }
+
+        if (role == UserRole.DOCTOR && licenseNumber == null) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Doctor license number is required");
         }
 
         AuthUser user = AuthUser.builder()
                 .name(request.getName().trim())
-                .email(request.getEmail().trim().toLowerCase())
+                .email(normalizedEmail)
                 .password(passwordEncoder.encode(request.getPassword()))
-                .role(parseRole(request.getRole()))
+                .role(role)
+                .licenseNumber(licenseNumber)
                 .build();
 
         AuthUser saved = authUserRepository.save(user);
@@ -198,8 +207,18 @@ public class AuthService {
                         .name(user.getName())
                         .email(user.getEmail())
                         .role(user.getRole())
+                        .licenseNumber(user.getLicenseNumber())
                         .build())
                 .build();
+    }
+
+    private String normalizeLicenseNumber(String licenseNumber) {
+        if (licenseNumber == null) {
+            return null;
+        }
+
+        String normalized = licenseNumber.trim();
+        return normalized.isEmpty() ? null : normalized;
     }
 
     private String issueRefreshToken(AuthUser user) {

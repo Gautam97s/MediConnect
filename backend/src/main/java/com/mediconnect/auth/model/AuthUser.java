@@ -42,6 +42,9 @@ public class AuthUser {
     @Column(nullable = false)
     private UserRole role;
 
+    @Column(name = "license_number")
+    private String licenseNumber;
+
     @CreationTimestamp
     @Column(updatable = false)
     private LocalDateTime createdAt;

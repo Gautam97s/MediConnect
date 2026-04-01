@@ -13,6 +13,7 @@ export default function SignupPage() {
   const [password, setPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
   const [role, setRole] = useState('PATIENT');
+  const [licenseNumber, setLicenseNumber] = useState('');
   const [error, setError] = useState('');
   const [success, setSuccess] = useState('');
 
@@ -45,12 +46,18 @@ export default function SignupPage() {
       return;
     }
 
+    if (role === 'DOCTOR' && !licenseNumber.trim()) {
+      setError('Doctor license number is required.');
+      return;
+    }
+
     try {
       const data = await register({
         name: name.trim(),
         email: email.trim(),
         password,
-        role
+        role,
+        licenseNumber: role === 'DOCTOR' ? licenseNumber.trim() : ''
       });
 
       if (data?.token || data?.accessToken || data?.jwt || data?.data?.token) {
@@ -133,6 +140,20 @@ export default function SignupPage() {
             placeholder="you@example.com"
           />
         </div>
+
+        {role === 'DOCTOR' ? (
+          <div>
+            <label className="mb-2 block text-sm font-semibold text-stone-700">Medical license number</label>
+            <input
+              type="text"
+              required
+              value={licenseNumber}
+              onChange={(e) => setLicenseNumber(e.target.value)}
+              className="w-full rounded-xl border border-stone-300 px-4 py-3 outline-none transition focus:border-indigo-500 focus:ring-2 focus:ring-indigo-200"
+              placeholder="Enter your license number"
+            />
+          </div>
+        ) : null}
 
         <div>
           <label className="mb-2 block text-sm font-semibold text-stone-700">Password</label>

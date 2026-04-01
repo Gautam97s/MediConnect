@@ -25,7 +25,8 @@ function extractUser(data, fallback = {}) {
     id: data?.user?.id || data?.id || fallback.id || null,
     name: data?.user?.name || data?.name || fallback.name || '',
     email: data?.user?.email || data?.email || fallback.email || '',
-    role
+    role,
+    licenseNumber: data?.user?.licenseNumber || data?.licenseNumber || fallback.licenseNumber || ''
   };
 }
 
@@ -131,12 +132,12 @@ export function AuthProvider({ children }) {
     }
   };
 
-  const register = async ({ name, email, password, role }) => {
+  const register = async ({ name, email, password, role, licenseNumber }) => {
     setLoading(true);
     try {
-      const data = await registerRequest({ name, email, password, role });
+      const data = await registerRequest({ name, email, password, role, licenseNumber });
       const nextToken = extractToken(data);
-      const nextUser = extractUser(data, { name, email, role });
+      const nextUser = extractUser(data, { name, email, role, licenseNumber });
       const expiresAtEpochMs = extractExpiresAtEpochMs(data);
 
       if (nextToken) {

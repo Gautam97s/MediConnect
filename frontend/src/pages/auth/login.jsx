@@ -9,6 +9,28 @@ function roleLanding(role) {
   return role === 'DOCTOR' ? '/doctor/dashboard' : '/patient/dashboard';
 }
 
+function normalizeRole(value) {
+  const role = (value || '').toString().trim().toUpperCase();
+  if (role === 'DOCTOR') return 'DOCTOR';
+  if (role === 'PATIENT') return 'PATIENT';
+  return '';
+}
+
+function getLoginErrorMessage(err) {
+  const status = err?.response?.status;
+  const message = err?.response?.data?.message || err?.response?.data?.error || err?.message || '';
+
+  if (status === 401) {
+    return 'Invalid email or password. Please check your credentials and try again.';
+  }
+
+  if (status === 403) {
+    return message || 'Selected role does not match your account.';
+  }
+
+  return message || 'Login failed. Please check credentials.';
+}
+
 export default function LoginPage() {
   const router = useRouter();
   const { login, loading, isAuthenticated, isAuthReady, user } = useAuth();
@@ -41,14 +63,28 @@ export default function LoginPage() {
     return typeof candidate === 'string' ? candidate : '';
   }, [router.query.next]);
 
+  const requestedRole = useMemo(() => normalizeRole(router.query.role), [router.query.role]);
+
+  useEffect(() => {
+    if (!requestedRole) {
+      return;
+    }
+
+    setRole(requestedRole);
+  }, [requestedRole]);
+
   useEffect(() => {
     if (!isAuthReady || !isAuthenticated) {
       return;
     }
 
+    if (requestedRole && user?.role && requestedRole !== user.role) {
+      return;
+    }
+
     const destination = nextPath || roleLanding(user?.role);
     router.replace(destination);
-  }, [isAuthReady, isAuthenticated, user, nextPath, router]);
+  }, [isAuthReady, isAuthenticated, user, nextPath, requestedRole, router]);
 
   const onSubmit = async (e) => {
     e.preventDefault();
@@ -59,7 +95,7 @@ export default function LoginPage() {
       const destination = nextPath || roleLanding(user?.role);
       await router.push(destination);
     } catch (err) {
-      setError(err?.response?.data?.message || err?.message || 'Login failed. Please check credentials.');
+      setError(getLoginErrorMessage(err));
     }
   };
 

@@ -61,3 +61,9 @@ export const resetPasswordRequest = async (payload) => {
     '/reset-password'
   ]);
 };
+
+export const refreshTokenRequest = async (payload) => {
+  return postWithFallback(payload, [
+    '/auth/refresh'
+  ]);
+};

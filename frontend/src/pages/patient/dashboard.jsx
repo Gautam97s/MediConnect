@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import Head from 'next/head';
 import Link from 'next/link';
 import PatientLayout from '../../components/PatientLayout';
+import { useAuth } from '../../features/auth/hooks/useAuth';
 import { 
   HeartPulse, 
   Calendar, 
@@ -16,12 +17,14 @@ import {
 } from 'lucide-react';
 
 export default function PatientDashboard() {
+  const { user } = useAuth();
+  const displayName = user?.name?.trim() || 'Patient';
   return (
     <PatientLayout title="My Hub" activePage="dashboard">
         <main className="flex-1 px-8 py-10 flex flex-col h-full overflow-hidden">
           
           <div className="mb-8">
-             <h1 className="text-3xl font-bold text-stone-900">Good Morning, Emma</h1>
+             <h1 className="text-3xl font-bold text-stone-900">Good Morning, {displayName}</h1>
              <p className="text-stone-500 mt-1 font-medium">Your healthcare journey at a glance.</p>
           </div>
 
@@ -93,7 +96,7 @@ export default function PatientDashboard() {
                 <div>
                    <h3 className="text-teal-100 font-bold tracking-wider text-sm mb-6 uppercase">Care Team Note</h3>
                    <p className="text-lg font-medium leading-relaxed">
-                     "Your vitals are looking excellent this week Emma. Keep up the exact same routine until our next check-up."
+                     "Your vitals are looking excellent this week {displayName}. Keep up the exact same routine until our next check-up."
                    </p>
                 </div>
                 <div className="flex items-center gap-4 mt-8">

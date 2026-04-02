@@ -1,6 +1,7 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { useRouter } from 'next/router';
 import PatientLayout from '../../components/PatientLayout';
+import { useAuth } from '../../features/auth/hooks/useAuth';
 import { ArrowLeft, Calendar, CheckCircle, Clock, CreditCard, ShieldCheck, User } from 'lucide-react';
 import { createAppointment } from '../../api/appointments';
 import { CATEGORIES, DOCTORS } from '../../data/bookingData';
@@ -32,6 +33,7 @@ function formatDateTime(value) {
 
 export default function PaymentPage() {
   const router = useRouter();
+  const { user } = useAuth();
   const [appointmentDraft, setAppointmentDraft] = useState(null);
   const [cardName, setCardName] = useState('');
   const [cardNumber, setCardNumber] = useState('');
@@ -59,6 +61,12 @@ export default function PaymentPage() {
       router.replace('/patient/appointments');
     }
   }, [router]);
+
+  useEffect(() => {
+    if (!cardName.trim() && user?.name) {
+      setCardName(user.name);
+    }
+  }, [cardName, user]);
 
   const amount = useMemo(() => {
     const consultFee = Number(appointmentDraft?.fee || 0);
@@ -205,7 +213,7 @@ export default function PaymentPage() {
                   onChange={(e) => setCardName(e.target.value)}
                   onKeyDown={handleKeyDown}
                   className="w-full border border-stone-300 rounded-xl px-4 py-3"
-                  placeholder="John Doe"
+                  placeholder={user?.name || 'Cardholder name'}
                 />
               </div>
 
@@ -262,14 +270,14 @@ export default function PaymentPage() {
               disabled={isPaying || isDone}
               className="mt-6 w-full px-6 py-3 rounded-xl bg-teal-600 hover:bg-teal-700 text-white font-bold disabled:opacity-60"
             >
-              {isDone ? 'Payment successful' : isPaying ? 'Processing payment...' : `Pay $${amount.total} & Confirm`}
+              {isDone ? 'Payment successful' : isPaying ? 'Processing payment...' : <>Pay <span className="text-sm">${amount.total}</span> & Confirm</>}
             </button>
           </section>
 
           <aside className="bg-white rounded-[1.5rem] border border-stone-100 p-6 shadow-[0_8px_30px_rgb(0,0,0,0.04)] h-fit">
             <h3 className="text-lg font-bold text-stone-900 mb-4">Appointment summary</h3>
             <div className="space-y-3 text-sm">
-              <div className="flex items-center gap-2 text-stone-700"><User size={14} /> {appointmentDraft.patientName}</div>
+              <div className="flex items-center gap-2 text-stone-700"><User size={14} /> {appointmentDraft.patientName || user?.name}</div>
               <div className="text-stone-700">
                 Doctor: {appointmentDraft.doctorName || `#${appointmentDraft.doctorId}`}
                 <span className="ml-2 text-stone-400">{doctorCategory}</span>
@@ -280,9 +288,9 @@ export default function PaymentPage() {
             </div>
 
             <div className="mt-5 pt-4 border-t border-stone-200 space-y-2 text-sm font-semibold">
-              <div className="flex justify-between"><span className="text-stone-500">Consultation</span><span>${amount.consultFee}</span></div>
-              <div className="flex justify-between"><span className="text-stone-500">Platform fee</span><span>${amount.platformFee}</span></div>
-              <div className="flex justify-between text-base font-bold"><span>Total</span><span className="text-teal-700">${amount.total}</span></div>
+              <div className="flex justify-between"><span className="text-stone-500">Consultation</span><span className="text-sm">${amount.consultFee}</span></div>
+              <div className="flex justify-between"><span className="text-stone-500">Platform fee</span><span className="text-sm">${amount.platformFee}</span></div>
+              <div className="flex justify-between text-base font-bold"><span>Total</span><span className="text-sm text-teal-700">${amount.total}</span></div>
             </div>
 
             {isDone && (

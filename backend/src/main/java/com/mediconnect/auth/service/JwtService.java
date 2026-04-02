@@ -3,6 +3,7 @@ package com.mediconnect.auth.service;
 import com.mediconnect.auth.model.AuthUser;
 import io.jsonwebtoken.Jwts;
 import io.jsonwebtoken.SignatureAlgorithm;
+import io.jsonwebtoken.Claims;
 import io.jsonwebtoken.security.Keys;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
@@ -36,6 +37,16 @@ public class JwtService {
 
     public long getExpiresAtEpochMs() {
         return getExpiryFrom(new Date()).getTime();
+    }
+
+    public String extractEmail(String token) {
+        Claims claims = Jwts.parserBuilder()
+                .setSigningKey(getSigningKey())
+                .build()
+                .parseClaimsJws(token)
+                .getBody();
+
+        return claims.getSubject();
     }
 
     private Date getExpiryFrom(Date from) {

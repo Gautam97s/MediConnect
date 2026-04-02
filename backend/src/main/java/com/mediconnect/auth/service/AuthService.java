@@ -2,16 +2,21 @@ package com.mediconnect.auth.service;
 
 import com.mediconnect.auth.model.AuthResponse;
 import com.mediconnect.auth.model.AuthUser;
+import com.mediconnect.auth.model.DoctorProfile;
+import com.mediconnect.auth.model.DoctorVerificationStatus;
 import com.mediconnect.auth.model.ForgotPasswordRequest;
 import com.mediconnect.auth.model.LoginRequest;
 import com.mediconnect.auth.model.LogoutRequest;
+import com.mediconnect.auth.model.PatientProfile;
 import com.mediconnect.auth.model.PasswordResetToken;
 import com.mediconnect.auth.model.RefreshTokenRequest;
 import com.mediconnect.auth.model.RegisterRequest;
 import com.mediconnect.auth.model.ResetPasswordRequest;
 import com.mediconnect.auth.model.UserRole;
 import com.mediconnect.auth.repository.AuthUserRepository;
+import com.mediconnect.auth.repository.DoctorProfileRepository;
 import com.mediconnect.auth.repository.PasswordResetTokenRepository;
+import com.mediconnect.auth.repository.PatientProfileRepository;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.HttpStatus;
 import org.springframework.data.redis.core.StringRedisTemplate;
@@ -24,12 +29,15 @@ import org.springframework.transaction.annotation.Transactional;
 import java.time.Duration;
 import java.time.LocalDateTime;
 import java.util.Map;
+import java.util.Objects;
 import java.util.UUID;
 
 @Service
 public class AuthService {
 
     private final AuthUserRepository authUserRepository;
+    private final DoctorProfileRepository doctorProfileRepository;
+    private final PatientProfileRepository patientProfileRepository;
     private final PasswordResetTokenRepository passwordResetTokenRepository;
     private final StringRedisTemplate redisTemplate;
     private final PasswordEncoder passwordEncoder;
@@ -43,12 +51,16 @@ public class AuthService {
 
     public AuthService(
             AuthUserRepository authUserRepository,
+            DoctorProfileRepository doctorProfileRepository,
+            PatientProfileRepository patientProfileRepository,
             PasswordResetTokenRepository passwordResetTokenRepository,
             StringRedisTemplate redisTemplate,
             PasswordEncoder passwordEncoder,
             JwtService jwtService
     ) {
         this.authUserRepository = authUserRepository;
+        this.doctorProfileRepository = doctorProfileRepository;
+        this.patientProfileRepository = patientProfileRepository;
         this.passwordResetTokenRepository = passwordResetTokenRepository;
         this.redisTemplate = redisTemplate;
         this.passwordEncoder = passwordEncoder;
@@ -73,10 +85,24 @@ public class AuthService {
                 .email(normalizedEmail)
                 .password(passwordEncoder.encode(request.getPassword()))
                 .role(role)
-                .licenseNumber(licenseNumber)
                 .build();
 
         AuthUser saved = authUserRepository.save(user);
+
+        if (role == UserRole.DOCTOR) {
+            DoctorProfile doctorProfile = java.util.Objects.requireNonNull(DoctorProfile.builder()
+                .user(saved)
+                .licenseNumber(licenseNumber)
+                .verificationStatus(DoctorVerificationStatus.PENDING)
+                .build());
+            doctorProfileRepository.save(doctorProfile);
+        } else {
+            PatientProfile patientProfile = java.util.Objects.requireNonNull(PatientProfile.builder()
+                .user(saved)
+                .build());
+            patientProfileRepository.save(patientProfile);
+        }
+
         String token = jwtService.generateToken(saved);
         String refreshToken = issueRefreshToken(saved);
 
@@ -196,6 +222,8 @@ public class AuthService {
     }
 
     private AuthResponse toAuthResponse(AuthUser user, String token, String refreshToken) {
+        DoctorProfile doctorProfile = doctorProfileRepository.findByUser(user).orElse(null);
+        PatientProfile patientProfile = patientProfileRepository.findByUser(user).orElse(null);
         long now = System.currentTimeMillis();
         return AuthResponse.builder()
                 .token(token)
@@ -207,7 +235,29 @@ public class AuthService {
                         .name(user.getName())
                         .email(user.getEmail())
                         .role(user.getRole())
-                        .licenseNumber(user.getLicenseNumber())
+                        .licenseNumber(doctorProfile != null ? doctorProfile.getLicenseNumber() : user.getLicenseNumber())
+                    .phone(user.getPhone())
+                    .dateOfBirth(patientProfile != null ? patientProfile.getDateOfBirth() : user.getDateOfBirth())
+                    .gender(patientProfile != null ? patientProfile.getGender() : user.getGender())
+                    .bloodType(patientProfile != null ? patientProfile.getBloodType() : user.getBloodType())
+                    .address(patientProfile != null ? patientProfile.getAddress() : user.getAddress())
+                    .medicalNumber(patientProfile != null ? patientProfile.getMedicalNumber() : user.getMedicalNumber())
+                    .diagnosis(patientProfile != null ? patientProfile.getDiagnosis() : user.getDiagnosis())
+                    .secondaryDiagnosis(patientProfile != null ? patientProfile.getSecondaryDiagnosis() : user.getSecondaryDiagnosis())
+                    .urgentAlerts(patientProfile != null ? patientProfile.getUrgentAlerts() : user.getUrgentAlerts())
+                    .emergencyContactName(patientProfile != null ? patientProfile.getEmergencyContactName() : user.getEmergencyContactName())
+                    .emergencyContactRelation(patientProfile != null ? patientProfile.getEmergencyContactRelation() : user.getEmergencyContactRelation())
+                    .emergencyContactPhone(patientProfile != null ? patientProfile.getEmergencyContactPhone() : user.getEmergencyContactPhone())
+                    .primaryCareProviderName(patientProfile != null ? patientProfile.getPrimaryCareProviderName() : user.getPrimaryCareProviderName())
+                    .primaryCareProviderSpecialty(patientProfile != null ? patientProfile.getPrimaryCareProviderSpecialty() : user.getPrimaryCareProviderSpecialty())
+                    .insuranceProvider(patientProfile != null ? patientProfile.getInsuranceProvider() : user.getInsuranceProvider())
+                    .insurancePlan(patientProfile != null ? patientProfile.getInsurancePlan() : user.getInsurancePlan())
+                    .insuranceMemberId(patientProfile != null ? patientProfile.getInsuranceMemberId() : user.getInsuranceMemberId())
+                    .insuranceGroupNumber(patientProfile != null ? patientProfile.getInsuranceGroupNumber() : user.getInsuranceGroupNumber())
+                    .primaryCareVisitCopay(patientProfile != null ? patientProfile.getPrimaryCareVisitCopay() : user.getPrimaryCareVisitCopay())
+                    .specialistVisitCopay(patientProfile != null ? patientProfile.getSpecialistVisitCopay() : user.getSpecialistVisitCopay())
+                    .emergencyRoomCopay(patientProfile != null ? patientProfile.getEmergencyRoomCopay() : user.getEmergencyRoomCopay())
+                    .prescriptionDrugsCopay(patientProfile != null ? patientProfile.getPrescriptionDrugsCopay() : user.getPrescriptionDrugsCopay())
                         .build())
                 .build();
     }
@@ -223,10 +273,12 @@ public class AuthService {
 
     private String issueRefreshToken(AuthUser user) {
         String refreshToken = UUID.randomUUID().toString();
-        String key = refreshPrefix + refreshToken;
+        String key = Objects.requireNonNull(refreshPrefix, "refreshPrefix") + refreshToken;
+        String userIdValue = Objects.requireNonNull(String.valueOf(user.getId()), "userId");
+        Duration ttl = Objects.requireNonNull(Duration.ofMillis(refreshExpirationMs), "refreshExpirationMs");
 
         try {
-            redisTemplate.opsForValue().set(key, String.valueOf(user.getId()), Duration.ofMillis(refreshExpirationMs));
+            redisTemplate.opsForValue().set(Objects.requireNonNull(key, "key"), userIdValue, ttl);
         } catch (RedisConnectionFailureException ex) {
             throw new ResponseStatusException(
                     HttpStatus.SERVICE_UNAVAILABLE,

@@ -5,6 +5,17 @@ import { HeartPulse, Stethoscope } from 'lucide-react';
 import AuthShell from '../../features/auth/components/AuthShell';
 import { useAuth } from '../../features/auth/hooks/useAuth';
 
+function getSignupErrorMessage(err) {
+  const status = err?.response?.status;
+  const message = err?.response?.data?.message || err?.response?.data?.error || err?.message || '';
+
+  if (status === 409) {
+    return 'An account with this email already exists. Try signing in instead.';
+  }
+
+  return message || 'Registration failed.';
+}
+
 export default function SignupPage() {
   const router = useRouter();
   const { register, loading } = useAuth();
@@ -70,7 +81,7 @@ export default function SignupPage() {
         router.push('/auth/login');
       }, 1000);
     } catch (err) {
-      setError(err?.response?.data?.message || err?.message || 'Registration failed.');
+      setError(getSignupErrorMessage(err));
     }
   };
 

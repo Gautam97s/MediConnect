@@ -1,6 +1,7 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { useRouter } from 'next/router';
 import PatientLayout from '../../components/PatientLayout';
+import { useAuth } from '../../features/auth/hooks/useAuth';
 import {
   ArrowLeft,
   Calendar,
@@ -66,6 +67,7 @@ function formatDateTime(value) {
 }
 
 function BookingWizard({ onCancel, onProceedToPayment }) {
+  const { user } = useAuth();
   const [step, setStep] = useState(1);
   const [category, setCategory] = useState(null);
   const [doctor, setDoctor] = useState(null);
@@ -75,6 +77,12 @@ function BookingWizard({ onCancel, onProceedToPayment }) {
   const [reason, setReason] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [error, setError] = useState('');
+
+  useEffect(() => {
+    if (!patientName.trim() && user?.name) {
+      setPatientName(user.name);
+    }
+  }, [patientName, user]);
 
   const doctors = DOCTORS[category] || [];
 
@@ -214,7 +222,7 @@ function BookingWizard({ onCancel, onProceedToPayment }) {
               value={patientName}
               onChange={(e) => setPatientName(e.target.value)}
               className="w-full border border-stone-300 rounded-xl px-4 py-3 focus:outline-none focus:ring-2 focus:ring-teal-500"
-              placeholder="Enter patient name"
+              placeholder={user?.name || 'Enter patient name'}
             />
           </div>
 
@@ -345,7 +353,6 @@ export default function Appointments() {
             <div className="flex items-center justify-between mb-8">
               <div>
                 <h1 className="text-3xl font-extrabold text-stone-900 mb-1">Appointments</h1>
-                <p className="text-stone-500 font-medium text-lg">Live data from backend appointments API.</p>
               </div>
               <button
                 onClick={() => setIsBooking(true)}

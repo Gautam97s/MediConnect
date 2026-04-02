@@ -3,6 +3,10 @@ import { useState } from 'react';
 import AuthShell from '../../features/auth/components/AuthShell';
 import { useAuth } from '../../features/auth/hooks/useAuth';
 
+function getForgotPasswordErrorMessage(err) {
+  return err?.response?.data?.message || err?.response?.data?.error || err?.message || 'Could not process request. Please try again.';
+}
+
 export default function ForgotPasswordPage() {
   const { forgotPassword, loading } = useAuth();
   const [email, setEmail] = useState('');
@@ -18,7 +22,7 @@ export default function ForgotPasswordPage() {
       await forgotPassword({ email: email.trim() });
       setSuccess('If this email exists, reset instructions were sent.');
     } catch (err) {
-      setError(err?.response?.data?.message || err?.message || 'Could not process request.');
+      setError(getForgotPasswordErrorMessage(err));
     }
   };
 

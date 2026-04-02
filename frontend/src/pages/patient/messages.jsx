@@ -2,6 +2,7 @@ import React from 'react';
 import Head from 'next/head';
 import Link from 'next/link';
 import PatientLayout from '../../components/PatientLayout';
+import { useAuth } from '../../features/auth/hooks/useAuth';
 import { 
   Users, 
   Settings,
@@ -20,6 +21,9 @@ import {
 } from 'lucide-react';
 
 export default function Messages() {
+   const { user } = useAuth();
+   const displayName = user?.name?.trim() || 'Patient';
+
   return (
     <PatientLayout title="Messages" activePage="messages">
       <main className="flex-1 px-8 py-10 flex flex-col h-full overflow-hidden">
@@ -40,7 +44,7 @@ export default function Messages() {
                  {/* Chat item active */}
                  <div className="p-4 bg-teal-50 border border-teal-100 rounded-2xl cursor-pointer">
                     <div className="flex justify-between items-center mb-1">
-                       <h4 className="font-bold text-sm text-teal-800">Alex Clare</h4>
+                       <h4 className="font-bold text-sm text-teal-800">{displayName}</h4>
                        <span className="text-xs font-semibold text-teal-600">10:42 AM</span>
                     </div>
                     <p className="text-xs text-teal-700/80 font-medium truncate">Thank you Dr. Jenkins, the prescription works.</p>
@@ -65,10 +69,10 @@ export default function Messages() {
               <div className="flex justify-between items-center border-b border-stone-100 pb-6 relative z-10">
                  <div className="flex items-center gap-4">
                     <div className="w-12 h-12 rounded-full overflow-hidden bg-rose-200">
-                       <img src="https://images.unsplash.com/photo-1599566150163-29194dcaad36?w=200&q=80" alt="Alex" className="w-full h-full object-cover" />
+                        <img src="https://images.unsplash.com/photo-1599566150163-29194dcaad36?w=200&q=80" alt={displayName} className="w-full h-full object-cover" />
                     </div>
                     <div>
-                       <h3 className="font-bold text-stone-900">Alex Clare</h3>
+                        <h3 className="font-bold text-stone-900">{displayName}</h3>
                        <p className="text-xs text-stone-500 font-medium">Patient • Last active 5m ago</p>
                     </div>
                  </div>
@@ -90,7 +94,7 @@ export default function Messages() {
                     
                     <div className="flex items-start gap-4 justify-end">
                        <div className="bg-black text-white px-5 py-3.5 rounded-2xl rounded-tr-sm text-sm font-medium max-w-sm">
-                          Hi Alex. Since your gastritis symptoms have almost cleared, you can stop taking them after 14 days. If the symptoms return, let's schedule another consultation.
+                          Hi {displayName}. Since your gastritis symptoms have almost cleared, you can stop taking them after 14 days. If the symptoms return, let's schedule another consultation.
                        </div>
                     </div>
 

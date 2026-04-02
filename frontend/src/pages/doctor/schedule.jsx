@@ -2,6 +2,7 @@ import React, { useEffect, useMemo, useState } from 'react';
 import DoctorLayout from '../../components/DoctorLayout';
 import { Calendar, Clock, Stethoscope, User } from 'lucide-react';
 import { fetchAppointments } from '../../api/appointments';
+import { useAuth } from '../../features/auth/hooks/useAuth';
 
 function formatDateTime(value) {
   const date = new Date(value);
@@ -23,10 +24,13 @@ function formatDateTime(value) {
 }
 
 export default function Schedule() {
-  const [doctorId, setDoctorId] = useState(101);
+  const { user, isAuthReady } = useAuth();
+  const [doctorId, setDoctorId] = useState(0);
   const [appointments, setAppointments] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
+
+  const displayName = (user?.name || 'Doctor').trim() || 'Doctor';
 
   const loadSchedule = async (id) => {
     setLoading(true);
@@ -42,8 +46,18 @@ export default function Schedule() {
   };
 
   useEffect(() => {
+    if (user?.id) {
+      setDoctorId(Number(user.id));
+    }
+  }, [user?.id]);
+
+  useEffect(() => {
+    if (!isAuthReady || !doctorId) {
+      return;
+    }
+
     loadSchedule(doctorId);
-  }, [doctorId]);
+  }, [doctorId, isAuthReady]);
 
   const sorted = useMemo(
     () => [...appointments].sort((a, b) => new Date(a.appointmentDate) - new Date(b.appointmentDate)),
@@ -55,8 +69,8 @@ export default function Schedule() {
       <main className="flex-1 px-8 py-10 flex flex-col h-full overflow-hidden">
         <div className="flex items-center justify-between mb-6 flex-wrap gap-4">
           <div>
-            <h2 className="text-3xl font-extrabold text-stone-900 mb-2">Your Schedule</h2>
-            <p className="text-stone-500 font-medium text-lg">Live appointments from backend for selected doctor.</p>
+            <h2 className="text-3xl font-extrabold text-stone-900 mb-2">{displayName}'s Schedule</h2>
+            <p className="text-stone-500 font-medium text-lg">Live appointments for the signed-in doctor account.</p>
           </div>
 
           <div className="flex items-center gap-2">
@@ -85,7 +99,7 @@ export default function Schedule() {
 
           {!loading && !error && sorted.length === 0 && (
             <div className="rounded-xl border border-stone-200 bg-white p-8 text-stone-500 text-center">
-              No appointments found for doctor #{doctorId}.
+              No appointments found for {displayName}.
             </div>
           )}
 

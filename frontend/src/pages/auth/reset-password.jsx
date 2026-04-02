@@ -4,6 +4,10 @@ import { useState } from 'react';
 import AuthShell from '../../features/auth/components/AuthShell';
 import { useAuth } from '../../features/auth/hooks/useAuth';
 
+function getResetPasswordErrorMessage(err) {
+  return err?.response?.data?.message || err?.response?.data?.error || err?.message || 'Reset failed. Please try again.';
+}
+
 export default function ResetPasswordPage() {
   const router = useRouter();
   const { resetPassword, loading } = useAuth();
@@ -36,7 +40,7 @@ export default function ResetPasswordPage() {
         router.push('/auth/login');
       }, 1200);
     } catch (err) {
-      setError(err?.response?.data?.message || err?.message || 'Reset failed.');
+      setError(getResetPasswordErrorMessage(err));
     }
   };
 

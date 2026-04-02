@@ -5,7 +5,17 @@ import { useAuth } from '../features/auth/hooks/useAuth';
 
 export default function DoctorSidebar({ activePage }) {
   const router = useRouter();
-  const { logout } = useAuth();
+  const { logout, user } = useAuth();
+
+  const displayName = (user?.name || 'Doctor').trim() || 'Doctor';
+  const subtitle = user?.licenseNumber ? `License ${user.licenseNumber}` : 'Doctor Portal';
+  const initials = displayName
+    .split(/\s+/)
+    .filter(Boolean)
+    .slice(0, 2)
+    .map((part) => part[0])
+    .join('')
+    .toUpperCase() || 'D';
 
   const handleLogout = () => {
     logout();
@@ -28,7 +38,7 @@ export default function DoctorSidebar({ activePage }) {
          </div>
          <div className="flex flex-col">
             <span className="font-bold text-[17px] text-stone-900 leading-tight tracking-tight">MediConnect</span>
-            <span className="text-[11px] font-semibold text-teal-600 md:tracking-wider uppercase">Doctor Portal</span>
+          <span className="text-[11px] font-semibold text-teal-600 md:tracking-wider uppercase">{subtitle}</span>
          </div>
       </div>
 
@@ -55,9 +65,13 @@ export default function DoctorSidebar({ activePage }) {
 
       <div className="mt-auto space-y-4 pb-2">
          <div className="flex justify-center">
-           <div className="w-14 h-14 rounded-full overflow-hidden shrink-0 shadow-md border-2 border-white hover:border-stone-200 transition-colors cursor-pointer">
-              <img src="https://images.unsplash.com/photo-1559839734-2b71ea197ec2?w=100&q=80" alt="Avatar" className="w-full h-full object-cover"/>
+           <div className="w-14 h-14 rounded-full shrink-0 shadow-md border-2 border-white bg-gradient-to-br from-teal-600 to-cyan-500 text-white flex items-center justify-center font-extrabold tracking-wide hover:border-stone-200 transition-colors cursor-pointer" title={displayName}>
+              {initials}
            </div>
+         </div>
+         <div className="text-center px-2">
+           <div className="text-sm font-bold text-stone-900 truncate">{displayName}</div>
+           <div className="text-[11px] font-semibold uppercase tracking-wider text-stone-500 truncate">{user?.role === 'DOCTOR' ? 'Provider Account' : 'Doctor Portal'}</div>
          </div>
          <button
            type="button"

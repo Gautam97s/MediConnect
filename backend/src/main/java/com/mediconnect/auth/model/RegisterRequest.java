@@ -19,4 +19,7 @@ public class RegisterRequest {
     private String password;
 
     private String role;
+
+    @Size(max = 100)
+    private String licenseNumber;
 }

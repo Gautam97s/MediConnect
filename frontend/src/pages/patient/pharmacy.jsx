@@ -61,7 +61,7 @@ export default function Pharmacy() {
                          <h3 className="font-bold text-stone-900 text-sm mb-1">{prod.name}</h3>
                          <p className="text-xs text-stone-500 font-medium mb-2">{prod.type}</p>
                          <div className="flex justify-between items-center">
-                            <span className="font-extrabold text-stone-800">{prod.price}</span>
+                            <span className="text-sm font-bold text-stone-800">{prod.price}</span>
                             <button className="w-8 h-8 rounded-full bg-stone-100 text-stone-600 font-bold group-hover:bg-black group-hover:text-white transition-colors flex items-center justify-center pb-0.5">
                                +
                             </button>
@@ -81,14 +81,14 @@ export default function Pharmacy() {
                    <div className="bg-white rounded-xl p-4 shadow-sm mb-3 cursor-pointer hover:shadow-md transition-shadow">
                       <h4 className="font-bold text-sm text-stone-900">Amoxicillin 500mg</h4>
                       <div className="flex justify-between items-center mt-2">
-                        <span className="text-xs font-semibold text-emerald-600 bg-emerald-50 px-2 py-1 rounded-md">Covered ($0.00)</span>
+                        <span className="text-[11px] font-semibold text-emerald-600 bg-emerald-50 px-2 py-1 rounded-md">Covered (<span className="text-[10px]">$0.00</span>)</span>
                         <span className="w-6 h-6 bg-black text-white flex items-center justify-center rounded-full"><ArrowRight size={12}/></span>
                       </div>
                    </div>
                    <div className="bg-white rounded-xl p-4 shadow-sm cursor-pointer hover:shadow-md transition-shadow">
                       <h4 className="font-bold text-sm text-stone-900">Lisinopril 10mg</h4>
                       <div className="flex justify-between items-center mt-2">
-                        <span className="text-xs font-semibold text-stone-600 bg-stone-100 px-2 py-1 rounded-md">$8.00 Copay</span>
+                        <span className="text-[11px] font-semibold text-stone-600 bg-stone-100 px-2 py-1 rounded-md"><span className="text-[10px]">$8.00</span> Copay</span>
                         <span className="w-6 h-6 bg-black text-white flex items-center justify-center rounded-full"><ArrowRight size={12}/></span>
                       </div>
                    </div>

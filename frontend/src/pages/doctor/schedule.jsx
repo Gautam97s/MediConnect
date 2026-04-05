@@ -3,6 +3,7 @@ import DoctorLayout from '../../components/DoctorLayout';
 import { Calendar, Clock, Stethoscope, User } from 'lucide-react';
 import { fetchAppointments } from '../../api/appointments';
 import { useAuth } from '../../features/auth/hooks/useAuth';
+import { DOCTORS } from '../../data/bookingData';
 
 function formatDateTime(value) {
   const date = new Date(value);
@@ -21,6 +22,20 @@ function formatDateTime(value) {
       minute: '2-digit'
     })
   };
+}
+
+function resolveBookingDoctorId(user) {
+  const name = (user?.name || '').trim().toLowerCase();
+
+  const matchedDoctor = Object.values(DOCTORS)
+    .flat()
+    .find((doctor) => doctor.name.toLowerCase().includes(name) || name.includes(doctor.name.toLowerCase()));
+
+  if (matchedDoctor) {
+    return Number(matchedDoctor.id) || 0;
+  }
+
+  return Number(user?.id) || 0;
 }
 
 export default function Schedule() {
@@ -46,10 +61,10 @@ export default function Schedule() {
   };
 
   useEffect(() => {
-    if (user?.id) {
-      setDoctorId(Number(user.id));
+    if (user) {
+      setDoctorId(resolveBookingDoctorId(user));
     }
-  }, [user?.id]);
+  }, [user]);
 
   useEffect(() => {
     if (!isAuthReady || !doctorId) {

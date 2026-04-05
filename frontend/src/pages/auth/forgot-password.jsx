@@ -4,6 +4,12 @@ import AuthShell from '../../features/auth/components/AuthShell';
 import { useAuth } from '../../features/auth/hooks/useAuth';
 
 function getForgotPasswordErrorMessage(err) {
+  const status = err?.response?.status;
+
+  if (status >= 500) {
+    return 'Server is temporarily unavailable. Please try again in a moment.';
+  }
+
   return err?.response?.data?.message || err?.response?.data?.error || err?.message || 'Could not process request. Please try again.';
 }
 

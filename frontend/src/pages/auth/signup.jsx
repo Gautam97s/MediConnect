@@ -13,6 +13,10 @@ function getSignupErrorMessage(err) {
     return 'An account with this email already exists. Try signing in instead.';
   }
 
+  if (status >= 500) {
+    return 'Server is temporarily unavailable. Please try again in a moment.';
+  }
+
   return message || 'Registration failed.';
 }
 

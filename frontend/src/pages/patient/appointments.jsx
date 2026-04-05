@@ -15,6 +15,7 @@ import {
   Video
 } from 'lucide-react';
 import { CATEGORIES, DOCTORS } from '../../data/bookingData';
+import { getDoctorSlots } from '../../utils/doctorSlots';
 import { 
   createAppointment, 
   getAllAppointments, 
@@ -24,7 +25,6 @@ import {
 function parseSlotToDate(timeSlot) {
   const now = new Date();
   const date = new Date(now);
-  date.setDate(now.getDate() + 1);
 
   const match = /(\d{1,2}):(\d{2})\s*(AM|PM)/i.exec(timeSlot || '10:00 AM');
   if (!match) {
@@ -45,6 +45,15 @@ function parseSlotToDate(timeSlot) {
 
   date.setHours(hours, minutes, 0, 0);
   return date.toISOString();
+}
+
+function isSlotTimePassed(timeSlot) {
+  const slotTime = new Date(parseSlotToDate(timeSlot)).getTime();
+  if (Number.isNaN(slotTime)) {
+    return false;
+  }
+
+  return slotTime <= Date.now();
 }
 
 function formatDateTime(value) {
@@ -84,7 +93,13 @@ function BookingWizard({ onCancel, onProceedToPayment }) {
     }
   }, [patientName, user]);
 
-  const doctors = DOCTORS[category] || [];
+  const doctors = useMemo(() => {
+    const list = DOCTORS[category] || [];
+    return list.map((doc) => ({
+      ...doc,
+      availableSlots: getDoctorSlots(doc.id, doc.availableSlots)
+    }));
+  }, [category]);
 
   const submitBooking = async () => {
     if (!doctor || !timeSlot) {
@@ -180,19 +195,31 @@ function BookingWizard({ onCancel, onProceedToPayment }) {
                 {isExpanded && (
                   <div className="px-4 pb-4 pt-1 border-t border-stone-100 bg-stone-50/50">
                     <div className="flex flex-wrap gap-2">
-                      {doc.availableSlots.map((slot) => (
-                        <button
-                          key={slot}
-                          onClick={() => {
-                            setDoctor(doc);
-                            setTimeSlot(slot);
-                            setStep(3);
-                          }}
-                          className="px-4 py-2 rounded-lg border border-stone-200 bg-white text-sm font-semibold text-stone-700 hover:border-teal-500 hover:text-teal-700"
-                        >
-                          {slot}
-                        </button>
-                      ))}
+                      {doc.availableSlots.map((slot) => {
+                        const isExpired = isSlotTimePassed(slot);
+                        return (
+                          <button
+                            key={slot}
+                            disabled={isExpired}
+                            onClick={() => {
+                              if (isExpired) {
+                                return;
+                              }
+                              setDoctor(doc);
+                              setTimeSlot(slot);
+                              setStep(3);
+                            }}
+                            className={`px-4 py-2 rounded-lg border text-sm font-semibold transition-colors ${
+                              isExpired
+                                ? 'border-stone-200 bg-stone-100 text-stone-400 cursor-not-allowed'
+                                : 'border-stone-200 bg-white text-stone-700 hover:border-teal-500 hover:text-teal-700'
+                            }`}
+                            title={isExpired ? 'This time slot has already passed' : 'Select slot'}
+                          >
+                            {slot}
+                          </button>
+                        );
+                      })}
                     </div>
                   </div>
                 )}
@@ -232,7 +259,7 @@ function BookingWizard({ onCancel, onProceedToPayment }) {
               value={reason}
               onChange={(e) => setReason(e.target.value)}
               rows={3}
-              className="w-full border border-stone-300 rounded-xl px-4 py-3 focus:outline-none focus:ring-2 focus:ring-teal-500"
+              className="w-full resize-none border border-stone-300 rounded-xl px-4 py-3 focus:outline-none focus:ring-2 focus:ring-teal-500"
               placeholder="Describe the concern"
             />
           </div>

@@ -1,8 +1,10 @@
-import React, { useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import Head from 'next/head';
 import Link from 'next/link';
 import PatientLayout from '../../components/PatientLayout';
 import { useAuth } from '../../features/auth/hooks/useAuth';
+import { fetchAppointments } from '../../api/appointments';
+import { DOCTORS } from '../../data/bookingData';
 import { 
   HeartPulse, 
   Calendar, 
@@ -16,9 +18,180 @@ import {
   User
 } from 'lucide-react';
 
+function normalizeName(value) {
+  return (value || '')
+    .toString()
+    .toLowerCase()
+    .replace(/\b(dr|mr|mrs|ms)\.?\s+/g, '')
+    .replace(/[^a-z\s]/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+function namesLikelyMatch(a, b) {
+  const left = normalizeName(a);
+  const right = normalizeName(b);
+
+  if (!left || !right) {
+    return false;
+  }
+
+  return left === right || left.includes(right) || right.includes(left);
+}
+
 export default function PatientDashboard() {
   const { user } = useAuth();
   const displayName = user?.name?.trim() || 'Patient';
+  const [appointments, setAppointments] = useState([]);
+  const [loadingUpcoming, setLoadingUpcoming] = useState(true);
+  const [nowEpochMs, setNowEpochMs] = useState(Date.now());
+
+  useEffect(() => {
+    const intervalId = window.setInterval(() => {
+      setNowEpochMs(Date.now());
+    }, 30000);
+
+    return () => {
+      window.clearInterval(intervalId);
+    };
+  }, []);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    const loadAppointments = async () => {
+      if (!displayName) {
+        setLoadingUpcoming(false);
+        return;
+      }
+
+      setLoadingUpcoming(true);
+      try {
+        const data = await fetchAppointments({ patientName: displayName });
+        let nextAppointments = Array.isArray(data) ? data : [];
+
+        // Fallback for cases like "Dr. Gautam Sharma" vs "Gautam Sharma".
+        if (nextAppointments.length === 0) {
+          const all = await fetchAppointments();
+          const allAppointments = Array.isArray(all) ? all : [];
+          nextAppointments = allAppointments.filter((appointment) =>
+            namesLikelyMatch(appointment?.patientName, displayName)
+          );
+        }
+
+        if (!cancelled) {
+          setAppointments(nextAppointments);
+        }
+      } catch {
+        if (!cancelled) {
+          setAppointments([]);
+        }
+      } finally {
+        if (!cancelled) {
+          setLoadingUpcoming(false);
+        }
+      }
+    };
+
+    loadAppointments();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [displayName]);
+
+  const doctorsById = useMemo(() => {
+    return Object.values(DOCTORS)
+      .flat()
+      .reduce((acc, doctor) => {
+        acc[Number(doctor.id)] = doctor.name;
+        return acc;
+      }, {});
+  }, []);
+
+  const upcomingConsultation = useMemo(() => {
+    return appointments
+      .filter((appointment) => {
+        const status = (appointment?.status || 'SCHEDULED').toString().toUpperCase();
+        const dateValue = new Date(appointment?.appointmentDate).getTime();
+        return dateValue > nowEpochMs && status !== 'CANCELLED' && status !== 'COMPLETED' && status !== 'NO_SHOW';
+      })
+      .sort((a, b) => new Date(a.appointmentDate) - new Date(b.appointmentDate))[0] || null;
+  }, [appointments, nowEpochMs]);
+
+  const upcomingDoctorName = useMemo(() => {
+    if (!upcomingConsultation) {
+      return 'No consultation scheduled';
+    }
+    return doctorsById[Number(upcomingConsultation.doctorId)] || `Doctor #${upcomingConsultation.doctorId}`;
+  }, [doctorsById, upcomingConsultation]);
+
+  const upcomingTimeLabel = useMemo(() => {
+    if (!upcomingConsultation?.appointmentDate) {
+      return 'Book your next appointment to continue care.';
+    }
+
+    const date = new Date(upcomingConsultation.appointmentDate);
+    if (Number.isNaN(date.getTime())) {
+      return 'Upcoming consultation time unavailable';
+    }
+
+    const today = new Date();
+    const isToday =
+      date.getDate() === today.getDate() &&
+      date.getMonth() === today.getMonth() &&
+      date.getFullYear() === today.getFullYear();
+
+    const timePart = date.toLocaleTimeString(undefined, {
+      hour: '2-digit',
+      minute: '2-digit'
+    });
+
+    if (isToday) {
+      return `Today at ${timePart}`;
+    }
+
+    const dayPart = date.toLocaleDateString(undefined, {
+      month: 'short',
+      day: 'numeric'
+    });
+    return `${dayPart} at ${timePart}`;
+  }, [upcomingConsultation]);
+
+  const canJoinUpcomingConsultation = useMemo(() => {
+    if (!upcomingConsultation?.appointmentDate) {
+      return false;
+    }
+
+    const appointmentMs = new Date(upcomingConsultation.appointmentDate).getTime();
+    if (Number.isNaN(appointmentMs)) {
+      return false;
+    }
+
+    const openJoinAtMs = appointmentMs - 5 * 60 * 1000;
+    return nowEpochMs >= openJoinAtMs;
+  }, [upcomingConsultation, nowEpochMs]);
+
+  const joinAvailabilityLabel = useMemo(() => {
+    if (!upcomingConsultation?.appointmentDate) {
+      return '';
+    }
+
+    const appointmentMs = new Date(upcomingConsultation.appointmentDate).getTime();
+    if (Number.isNaN(appointmentMs) || canJoinUpcomingConsultation) {
+      return '';
+    }
+
+    const openJoinAtMs = appointmentMs - 5 * 60 * 1000;
+    const remainingMs = openJoinAtMs - nowEpochMs;
+    if (remainingMs <= 0) {
+      return '';
+    }
+
+    const remainingMinutes = Math.ceil(remainingMs / 60000);
+    return `Join available in ${remainingMinutes} min`;
+  }, [upcomingConsultation, canJoinUpcomingConsultation, nowEpochMs]);
+
   return (
     <PatientLayout title="My Hub" activePage="dashboard">
         <main className="flex-1 px-8 py-10 flex flex-col h-full overflow-hidden">
@@ -37,10 +210,21 @@ export default function PatientDashboard() {
                </h3>
                <div className="flex items-end justify-between relative z-10">
                  <div>
-                    <h2 className="text-3xl font-extrabold text-stone-900 mb-2">Dr. Sarah Jenkins</h2>
-                    <p className="text-stone-500 font-medium flex items-center gap-2"><Clock size={16}/> Today at 09:30 AM</p>
+                    <h2 className="text-3xl font-extrabold text-stone-900 mb-2">
+                      {loadingUpcoming ? 'Loading...' : upcomingDoctorName}
+                    </h2>
+                    <p className="text-stone-500 font-medium flex items-center gap-2">
+                      <Clock size={16}/>
+                      {loadingUpcoming ? 'Checking upcoming slot...' : upcomingTimeLabel}
+                    </p>
+                    {!loadingUpcoming && joinAvailabilityLabel ? (
+                      <p className="mt-1 text-xs font-semibold text-stone-400">{joinAvailabilityLabel}</p>
+                    ) : null}
                  </div>
-                 <button className="px-6 py-3 bg-black hover:bg-stone-800 text-white rounded-xl font-bold text-sm shadow-md transition-all">
+                 <button
+                   className="px-6 py-3 bg-black hover:bg-stone-800 text-white rounded-xl font-bold text-sm shadow-md transition-all disabled:opacity-50 disabled:cursor-not-allowed"
+                   disabled={!upcomingConsultation || loadingUpcoming || !canJoinUpcomingConsultation}
+                 >
                    Join Room
                  </button>
                </div>

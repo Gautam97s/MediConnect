@@ -28,6 +28,10 @@ function getLoginErrorMessage(err) {
     return message || 'Selected role does not match your account.';
   }
 
+  if (status >= 500) {
+    return 'Server is temporarily unavailable. Please try again in a moment.';
+  }
+
   return message || 'Login failed. Please check credentials.';
 }
 

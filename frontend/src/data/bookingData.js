@@ -21,6 +21,7 @@ export const CATEGORIES = [
 
 export const DOCTORS = {
   general: [
+    { id: 100, name: 'Dr. Gautam Sharma', experience: '9 yrs', rating: 4.8, fee: 90, image: 'https://images.unsplash.com/photo-1612349317150-e413f6a5b16d?w=200&q=80', availableSlots: ['08:00 AM', '10:30 AM', '01:00 PM', '03:45 PM', '08:40 PM'] },
     { id: 101, name: 'Dr. Marcus Thorne', experience: '15 yrs', rating: 4.7, fee: 100, image: 'https://images.unsplash.com/photo-1612349317150-e413f6a5b16d?w=200&q=80', availableSlots: ['08:30 AM', '09:45 AM', '11:00 AM', '02:30 PM', '05:00 PM'] },
     { id: 102, name: 'Dr. Olivia Newton', experience: '5 yrs', rating: 4.6, fee: 80, image: 'https://images.unsplash.com/photo-1614608682850-e0d6ed316d47?w=200&q=80', availableSlots: ['11:00 AM', '01:15 PM', '04:00 PM'] },
   ],

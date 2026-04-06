@@ -14,6 +14,11 @@ export async function fetchAppointments(params = {}) {
   return response.data;
 }
 
+export async function fetchAppointmentById(id) {
+  const response = await client.get(`/appointments/${id}`);
+  return response.data;
+}
+
 export async function createAppointment(payload) {
   const response = await client.post('/appointments', payload);
   return response.data;

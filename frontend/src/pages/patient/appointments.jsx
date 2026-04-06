@@ -15,7 +15,7 @@ import {
   Video
 } from 'lucide-react';
 import { CATEGORIES, DOCTORS } from '../../data/bookingData';
-import { getDoctorSlots } from '../../utils/doctorSlots';
+import { fetchDoctorSlotsByIds, mergeDoctorSlots } from '../../utils/doctorSlots';
 import { 
   createAppointment, 
   getAllAppointments, 
@@ -26,10 +26,21 @@ function parseSlotToDate(timeSlot) {
   const now = new Date();
   const date = new Date(now);
 
+  const toLocalDateTimeString = (value) => {
+    const year = value.getFullYear();
+    const month = String(value.getMonth() + 1).padStart(2, '0');
+    const day = String(value.getDate()).padStart(2, '0');
+    const hours = String(value.getHours()).padStart(2, '0');
+    const minutes = String(value.getMinutes()).padStart(2, '0');
+    const seconds = String(value.getSeconds()).padStart(2, '0');
+
+    return `${year}-${month}-${day}T${hours}:${minutes}:${seconds}`;
+  };
+
   const match = /(\d{1,2}):(\d{2})\s*(AM|PM)/i.exec(timeSlot || '10:00 AM');
   if (!match) {
     date.setHours(10, 0, 0, 0);
-    return date.toISOString();
+    return toLocalDateTimeString(date);
   }
 
   let hours = Number(match[1]);
@@ -44,7 +55,7 @@ function parseSlotToDate(timeSlot) {
   }
 
   date.setHours(hours, minutes, 0, 0);
-  return date.toISOString();
+  return toLocalDateTimeString(date);
 }
 
 function isSlotTimePassed(timeSlot) {
@@ -86,6 +97,7 @@ function BookingWizard({ onCancel, onProceedToPayment }) {
   const [reason, setReason] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [error, setError] = useState('');
+  const [doctorSlotMap, setDoctorSlotMap] = useState({});
 
   useEffect(() => {
     if (!patientName.trim() && user?.name) {
@@ -93,13 +105,42 @@ function BookingWizard({ onCancel, onProceedToPayment }) {
     }
   }, [patientName, user]);
 
+  useEffect(() => {
+    const doctorsInCategory = DOCTORS[category] || [];
+    if (doctorsInCategory.length === 0) {
+      setDoctorSlotMap({});
+      return;
+    }
+
+    let cancelled = false;
+
+    const loadDoctorSlots = async () => {
+      try {
+        const slotMap = await fetchDoctorSlotsByIds(doctorsInCategory.map((doctor) => doctor.id));
+        if (!cancelled) {
+          setDoctorSlotMap(slotMap);
+        }
+      } catch {
+        if (!cancelled) {
+          setDoctorSlotMap({});
+        }
+      }
+    };
+
+    void loadDoctorSlots();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [category]);
+
   const doctors = useMemo(() => {
     const list = DOCTORS[category] || [];
     return list.map((doc) => ({
       ...doc,
-      availableSlots: getDoctorSlots(doc.id, doc.availableSlots)
+      availableSlots: mergeDoctorSlots(doctorSlotMap[doc.id] || [], doc.availableSlots)
     }));
-  }, [category]);
+  }, [category, doctorSlotMap]);
 
   const submitBooking = async () => {
     if (!doctor || !timeSlot) {

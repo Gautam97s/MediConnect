@@ -1,6 +1,7 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import Head from 'next/head';
 import Link from 'next/link';
+import { useRouter } from 'next/router';
 import PatientLayout from '../../components/PatientLayout';
 import { useAuth } from '../../features/auth/hooks/useAuth';
 import { fetchAppointments } from '../../api/appointments';
@@ -40,6 +41,7 @@ function namesLikelyMatch(a, b) {
 }
 
 export default function PatientDashboard() {
+  const router = useRouter();
   const { user } = useAuth();
   const displayName = user?.name?.trim() || 'Patient';
   const [appointments, setAppointments] = useState([]);
@@ -221,10 +223,16 @@ export default function PatientDashboard() {
                       <p className="mt-1 text-xs font-semibold text-stone-400">{joinAvailabilityLabel}</p>
                     ) : null}
                  </div>
-                 <button
-                   className="px-6 py-3 bg-black hover:bg-stone-800 text-white rounded-xl font-bold text-sm shadow-md transition-all disabled:opacity-50 disabled:cursor-not-allowed"
-                   disabled={!upcomingConsultation || loadingUpcoming || !canJoinUpcomingConsultation}
-                 >
+                  <button
+                    type="button"
+                    onClick={() => {
+                      if (upcomingConsultation?.id) {
+                        void router.push(`/patient/consultation/${upcomingConsultation.id}`);
+                      }
+                    }}
+                    className="px-6 py-3 bg-black hover:bg-stone-800 text-white rounded-xl font-bold text-sm shadow-md transition-all disabled:opacity-50 disabled:cursor-not-allowed"
+                    disabled={!upcomingConsultation || loadingUpcoming || !canJoinUpcomingConsultation}
+                  >
                    Join Room
                  </button>
                </div>

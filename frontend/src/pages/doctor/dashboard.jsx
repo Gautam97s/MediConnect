@@ -1,14 +1,17 @@
 import React from 'react';
 import { useEffect, useMemo, useState } from 'react';
+import { useRouter } from 'next/router';
 import DoctorLayout from '../../components/DoctorLayout';
 import { useAuth } from '../../features/auth/hooks/useAuth';
 import { fetchAppointments, updateAppointment, cancelAppointment } from '../../api/appointments';
 import { DOCTORS } from '../../data/bookingData';
-import { addDoctorSlot, formatTimeValueToSlotLabel, getDoctorSlots } from '../../utils/doctorSlots';
+import { fetchDoctorSlotsByIds, formatTimeValueToSlotLabel, mergeDoctorSlots, saveDoctorSlots } from '../../utils/doctorSlots';
 import { 
   MoreHorizontal,
   Clock,
-  User
+  User,
+  Video,
+  X
 } from 'lucide-react';
 
 function resolveBookingDoctorId(user) {
@@ -50,7 +53,15 @@ function getDoctorDefaultSlots(doctorId) {
    return doctor?.availableSlots || [];
 }
 
+function buildDoctorSlotRef(doctorId, doctorName) {
+   return {
+      id: doctorId,
+      name: doctorName
+   };
+}
+
 export default function DoctorDashboard() {
+   const router = useRouter();
    const { user, isAuthReady } = useAuth();
    const [appointments, setAppointments] = useState([]);
    const [loading, setLoading] = useState(true);
@@ -65,6 +76,7 @@ export default function DoctorDashboard() {
    const [slotTimeValue, setSlotTimeValue] = useState('');
    const [slotNotice, setSlotNotice] = useState('');
    const [doctorSlots, setDoctorSlots] = useState([]);
+   const [isSavingSlot, setIsSavingSlot] = useState(false);
 
    const doctorId = resolveBookingDoctorId(user);
    const displayName = (user?.name || 'Doctor').trim() || 'Doctor';
@@ -75,8 +87,27 @@ export default function DoctorDashboard() {
          return;
       }
 
-      setDoctorSlots(getDoctorSlots(doctorId, getDoctorDefaultSlots(doctorId)));
-   }, [doctorId]);
+      let cancelled = false;
+
+      const loadDoctorSlots = async () => {
+         try {
+            const slotMap = await fetchDoctorSlotsByIds([doctorId]);
+            if (!cancelled) {
+               setDoctorSlots(mergeDoctorSlots(slotMap[doctorId] || [], getDoctorDefaultSlots(doctorId)));
+            }
+         } catch {
+            if (!cancelled) {
+               setDoctorSlots(mergeDoctorSlots([], getDoctorDefaultSlots(doctorId)));
+            }
+         }
+      };
+
+      void loadDoctorSlots();
+
+      return () => {
+         cancelled = true;
+      };
+    }, [displayName, doctorId]);
 
    useEffect(() => {
       let cancelled = false;
@@ -239,6 +270,20 @@ export default function DoctorDashboard() {
       return upcomingScheduledAppointments[0] || null;
    }, [upcomingScheduledAppointments]);
 
+   const canJoinActiveConsultation = useMemo(() => {
+      if (!activeConsultation?.appointmentDate) {
+         return false;
+      }
+
+      const appointmentMs = new Date(activeConsultation.appointmentDate).getTime();
+      if (Number.isNaN(appointmentMs)) {
+         return false;
+      }
+
+      const diffMs = appointmentMs - Date.now();
+      return diffMs <= 10 * 60 * 1000;
+   }, [activeConsultation]);
+
    const openAvailabilityPopup = (nextAccepting) => {
       setPendingAvailability(nextAccepting);
       setIsAvailabilityOpen(false);
@@ -255,18 +300,54 @@ export default function DoctorDashboard() {
       setIsStatusPopupOpen(false);
    };
 
-   const handleAddSlot = () => {
+   const handleAddSlot = async () => {
       const formattedSlot = formatTimeValueToSlotLabel(slotTimeValue);
       if (!formattedSlot || !doctorId) {
          setSlotNotice('Pick a valid time first.');
          return;
       }
 
-      const updatedSlots = addDoctorSlot(doctorId, formattedSlot, getDoctorDefaultSlots(doctorId));
-      setDoctorSlots(updatedSlots);
-      setSlotNotice(`Added ${formattedSlot} to your booking slots.`);
-      setSlotTimeValue('');
-      setIsSlotPopupOpen(false);
+      const updatedSlots = mergeDoctorSlots([...doctorSlots, formattedSlot], getDoctorDefaultSlots(doctorId));
+
+      setIsSavingSlot(true);
+      try {
+         const saved = await saveDoctorSlots({
+            bookingDoctorId: doctorId,
+            doctorName: displayName,
+            slots: updatedSlots
+         });
+         setDoctorSlots(mergeDoctorSlots(saved.slots || [], getDoctorDefaultSlots(doctorId)));
+         setSlotNotice(`Added ${formattedSlot} to your booking slots.`);
+         setSlotTimeValue('');
+         setIsSlotPopupOpen(false);
+      } catch {
+         setSlotNotice('Could not save this slot right now.');
+      } finally {
+         setIsSavingSlot(false);
+      }
+   };
+
+   const handleMarkSlotUnavailable = async (slotToRemove) => {
+      if (!doctorId || !slotToRemove) {
+         return;
+      }
+
+      const updatedSlots = doctorSlots.filter((slot) => slot !== slotToRemove);
+
+      setIsSavingSlot(true);
+      try {
+         const saved = await saveDoctorSlots({
+            bookingDoctorId: doctorId,
+            doctorName: displayName,
+            slots: updatedSlots
+         });
+         setDoctorSlots(mergeDoctorSlots(saved.slots || [], getDoctorDefaultSlots(doctorId)));
+         setSlotNotice(`${slotToRemove} marked unavailable.`);
+      } catch {
+         setSlotNotice('Could not update slot availability right now.');
+      } finally {
+         setIsSavingSlot(false);
+      }
    };
 
   return (
@@ -374,41 +455,117 @@ export default function DoctorDashboard() {
                ) : null}
 
                {isSlotPopupOpen ? (
-                  <div className="fixed inset-0 z-40 bg-black/30 backdrop-blur-[1px] flex items-center justify-center p-4">
-                     <div className="w-full max-w-md rounded-2xl border border-stone-200 bg-white shadow-[0_24px_60px_rgba(15,23,42,0.2)] p-5">
-                        <h3 className="text-lg font-extrabold text-stone-900">Add Time Slot</h3>
-                        <p className="mt-1 text-sm text-stone-500">
-                           Pick a consultation time and add it to your booking availability.
-                        </p>
+                  <div className="fixed inset-0 z-40 bg-stone-950/40 backdrop-blur-sm flex items-center justify-center p-4">
+                     <div className="w-full max-w-md overflow-hidden rounded-[2rem] border border-white/70 bg-[linear-gradient(180deg,#ffffff_0%,#f8fbfb_100%)] shadow-[0_28px_80px_rgba(15,23,42,0.22)]">
+                        <div className="border-b border-stone-100 bg-[radial-gradient(circle_at_top_left,_rgba(20,184,166,0.12),_transparent_55%)] px-6 py-5">
+                           <div className="flex items-start gap-3">
+                              <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl bg-teal-50 text-teal-700 ring-1 ring-teal-100">
+                                 <Clock size={20} />
+                              </div>
+                              <div className="min-w-0">
+                                 <p className="text-[11px] font-bold uppercase tracking-[0.24em] text-teal-700">Schedule Update</p>
+                                 <h3 className="mt-1 text-xl font-extrabold tracking-tight text-stone-900">Manage Consultation Slots</h3>
+                                 <p className="mt-1 text-sm leading-6 text-stone-500">
+                                    Review your available slots and add a new time when needed.
+                                 </p>
+                              </div>
+                           </div>
+                        </div>
 
-                        <label className="mt-4 mb-1 block text-xs font-semibold uppercase tracking-wider text-stone-500">
-                           Consultation Time
-                        </label>
-                        <input
-                           type="time"
-                           value={slotTimeValue}
-                           onChange={(e) => {
-                              setSlotTimeValue(e.target.value);
-                              setSlotNotice('');
-                           }}
-                           className="h-12 w-full rounded-xl border border-stone-300 bg-white px-3 text-sm font-semibold text-stone-700 outline-none transition focus:border-teal-500 focus:ring-2 focus:ring-teal-200"
-                        />
+                        <div className="px-6 py-5">
+                           <div className="rounded-2xl border border-stone-200/80 bg-stone-50/90 p-4">
+                              <div className="flex items-center justify-between gap-3">
+                                 <p className="text-xs font-semibold uppercase tracking-[0.18em] text-stone-500">
+                                    Available Slots
+                                 </p>
+                                 <span className="rounded-full bg-white px-2.5 py-1 text-[11px] font-semibold text-stone-500 ring-1 ring-stone-200">
+                                    {doctorSlots.length} active
+                                 </span>
+                              </div>
 
-                        <div className="mt-4 flex justify-end gap-2">
-                           <button
-                              type="button"
-                              onClick={() => setIsSlotPopupOpen(false)}
-                              className="rounded-xl border border-stone-200 px-4 py-2 text-xs font-bold uppercase tracking-wider text-stone-600 hover:bg-stone-50"
+                              <div className="mt-3 flex flex-wrap gap-2">
+                                 {doctorSlots.length > 0 ? (
+                                    doctorSlots.map((slot) => (
+                                       <button
+                                          type="button"
+                                          key={`modal-${slot}`}
+                                          disabled={isSavingSlot}
+                                          onClick={() => void handleMarkSlotUnavailable(slot)}
+                                          className="inline-flex items-center gap-1.5 rounded-full border border-teal-200 bg-white px-3 py-1 text-[11px] font-bold uppercase tracking-wider text-teal-700 transition-colors hover:border-rose-200 hover:bg-rose-50 hover:text-rose-700 disabled:cursor-not-allowed disabled:opacity-60"
+                                          title="Mark unavailable"
+                                       >
+                                          {slot}
+                                          <X size={12} />
+                                       </button>
+                                    ))
+                                 ) : (
+                                    <p className="text-sm text-stone-500">No time slots added yet.</p>
+                                 )}
+                              </div>
+
+                              {doctorSlots.length > 0 ? (
+                                 <p className="mt-3 text-xs text-stone-500">
+                                    Click any slot to mark it unavailable for patients.
+                                 </p>
+                              ) : null}
+                           </div>
+
+                           <div className="mt-5 rounded-2xl border border-stone-200 bg-white/90 p-4 shadow-[0_8px_24px_rgba(15,23,42,0.04)]">
+                              <div className="flex items-center justify-between gap-3">
+                                 <label className="block text-xs font-semibold uppercase tracking-[0.18em] text-stone-500">
+                                    Consultation Time
+                                 </label>
+                                 <span className="rounded-full bg-stone-100 px-2.5 py-1 text-[11px] font-semibold text-stone-500">
+                                    {slotTimeValue ? formatTimeValueToSlotLabel(slotTimeValue) : 'No time selected'}
+                                 </span>
+                              </div>
+
+                              <input
+                                 type="time"
+                                 value={slotTimeValue}
+                                 onChange={(e) => {
+                                    setSlotTimeValue(e.target.value);
+                                    setSlotNotice('');
+                                 }}
+                                 className="mt-3 h-14 w-full rounded-2xl border border-stone-200 bg-stone-50 px-4 text-base font-bold text-stone-800 outline-none transition focus:border-teal-500 focus:bg-white focus:ring-4 focus:ring-teal-100"
+                              />
+
+                              <p className="mt-3 text-xs leading-5 text-stone-500">
+                                 Pick the exact start time you want patients to see when they book.
+                              </p>
+
+                              <div className="mt-4 flex items-center justify-between gap-3 rounded-2xl border border-dashed border-stone-200 bg-white/80 px-4 py-3">
+                                 <div>
+                                    <p className="text-xs font-semibold uppercase tracking-[0.18em] text-stone-500">New Slot</p>
+                                    <p className="mt-1 text-sm text-stone-500">Add only the selected time to your availability.</p>
+                                 </div>
+                                 <button
+                                    type="button"
+                                    onClick={handleAddSlot}
+                                    disabled={isSavingSlot}
+                                    className="shrink-0 rounded-xl bg-stone-900 px-4 py-2.5 text-[11px] font-bold uppercase tracking-wider text-white shadow-[0_10px_24px_rgba(15,23,42,0.18)] hover:bg-black disabled:cursor-not-allowed disabled:bg-stone-400"
+                                 >
+                                    {isSavingSlot ? 'Saving...' : 'Add Time Slot'}
+                                 </button>
+                              </div>
+                           </div>
+
+                           <div className="mt-5 flex items-center justify-end gap-3">
+                            <button
+                               type="button"
+                               onClick={() => setIsSlotPopupOpen(false)}
+                              className="rounded-xl border border-stone-200 bg-white px-4 py-2.5 text-xs font-bold uppercase tracking-wider text-stone-600 hover:bg-stone-50"
                            >
                               Cancel
                            </button>
-                           <button
-                              type="button"
-                              onClick={handleAddSlot}
-                              className="rounded-xl bg-stone-900 px-4 py-2 text-xs font-bold uppercase tracking-wider text-white hover:bg-black"
-                           >
-                              Add Slot
-                           </button>
+                            <button
+                               type="button"
+                               onClick={() => setIsSlotPopupOpen(false)}
+                               className="rounded-xl bg-stone-900 px-5 py-2.5 text-xs font-bold uppercase tracking-wider text-white shadow-[0_10px_24px_rgba(15,23,42,0.18)] hover:bg-black"
+                            >
+                              Done
+                             </button>
+                           </div>
                         </div>
                      </div>
                   </div>
@@ -428,11 +585,11 @@ export default function DoctorDashboard() {
                  <h3 className="text-sm font-bold text-stone-300">Next Break In</h3>
                          <div className="text-4xl font-extrabold text-white">{loading ? '...' : nextBreakText}</div>
              </div>
-             <section className="bg-white rounded-[2rem] p-6 shadow-[0_8px_30px_rgb(0,0,0,0.04)] min-h-[142px] flex flex-col justify-between">
+             <section className="bg-white rounded-[2rem] p-5 shadow-[0_8px_30px_rgb(0,0,0,0.04)] h-[142px] flex flex-col justify-between overflow-hidden">
                   <div className="flex items-start justify-between gap-3">
                      <div className="min-w-0">
-                        <h3 className="text-base font-extrabold text-stone-900">Manage Time Slots</h3>
-                        <p className="mt-1 text-sm text-stone-500">Add consultation slots for booking.</p>
+                        <h3 className="text-base font-extrabold text-stone-900 leading-tight">Manage Time Slots</h3>
+                        <p className="mt-1 truncate text-sm text-stone-500">Update your booking availability.</p>
                      </div>
 
                      <div className="flex items-center gap-2 shrink-0">
@@ -441,28 +598,18 @@ export default function DoctorDashboard() {
                            onClick={() => setIsSlotPopupOpen(true)}
                            className="h-10 rounded-xl bg-stone-900 px-4 text-[11px] font-bold uppercase tracking-wider text-white hover:bg-black"
                         >
-                           Add Slot
+                           Manage Slots
                         </button>
                      </div>
                   </div>
 
                   {slotNotice ? (
-                     <p className="mt-2 text-xs font-semibold text-teal-700">{slotNotice}</p>
+                     <p className="truncate text-xs font-semibold text-teal-700">{slotNotice}</p>
                   ) : null}
-
-                  <div className="mt-4 flex flex-wrap gap-2">
-                     {doctorSlots.map((slot) => (
-                        <span
-                           key={slot}
-                           className="rounded-full border border-teal-200 bg-teal-50 px-3 py-1 text-[11px] font-bold uppercase tracking-wider text-teal-700"
-                        >
-                           {slot}
-                        </span>
-                     ))}
-
-                     {doctorSlots.length === 0 ? (
-                        <span className="text-sm font-medium text-stone-500">No slots configured yet.</span>
-                     ) : null}
+                  <div className="text-sm">
+                     <span className="block truncate font-medium text-stone-500">
+                        {doctorSlots.length > 0 ? `${doctorSlots.length} active slots` : 'No slots configured yet'}
+                     </span>
                   </div>
                </section>
           </div>
@@ -505,6 +652,31 @@ export default function DoctorDashboard() {
                            <p className="text-sm font-semibold text-stone-700">
                               {activeConsultation?.reason || 'General consultation'}
                            </p>
+                        </div>
+
+                        <div className="mt-5 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                           <p className="text-sm text-stone-500">
+                              {canJoinActiveConsultation
+                                 ? 'Your consultation room is ready to join.'
+                                 : 'Session access opens 10 minutes before the scheduled time.'}
+                           </p>
+                           <button
+                              type="button"
+                              disabled={!canJoinActiveConsultation}
+                              onClick={() => {
+                                 if (activeConsultation?.id) {
+                                    void router.push(`/doctor/consultation/${activeConsultation.id}`);
+                                 }
+                              }}
+                              className={`inline-flex items-center justify-center gap-2 rounded-xl px-4 py-3 text-xs font-bold uppercase tracking-wider transition-colors ${
+                                 canJoinActiveConsultation
+                                    ? 'bg-stone-900 text-white hover:bg-black'
+                                    : 'cursor-not-allowed border border-stone-200 bg-stone-100 text-stone-400'
+                              }`}
+                           >
+                              <Video size={15} />
+                              Join Session
+                           </button>
                         </div>
                      </div>
                   )}

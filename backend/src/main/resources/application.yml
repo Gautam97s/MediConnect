@@ -33,3 +33,8 @@ auth:
   refresh:
     expiration-ms: ${AUTH_REFRESH_EXPIRATION_MS:518400000}
     prefix: ${AUTH_REFRESH_PREFIX:auth:refresh:}
+
+zego:
+  app-id: ${ZEGO_APP_ID:0}
+  server-secret: ${ZEGO_SERVER_SECRET:}
+  server-url: ${ZEGO_SERVER_URL:}

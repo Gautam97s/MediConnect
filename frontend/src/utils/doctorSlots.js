@@ -1,26 +1,4 @@
-const STORAGE_KEY = 'doctorCustomSlotsById';
-
-function parseStoredSlots() {
-  if (typeof window === 'undefined') {
-    return {};
-  }
-
-  try {
-    const raw = window.localStorage.getItem(STORAGE_KEY);
-    const parsed = raw ? JSON.parse(raw) : {};
-    return parsed && typeof parsed === 'object' ? parsed : {};
-  } catch {
-    return {};
-  }
-}
-
-function writeStoredSlots(payload) {
-  if (typeof window === 'undefined') {
-    return;
-  }
-
-  window.localStorage.setItem(STORAGE_KEY, JSON.stringify(payload));
-}
+import axiosInstance from './axiosConfig';
 
 function toSlotMinutes(slotLabel) {
   const match = /^(\d{1,2}):(\d{2})\s*(AM|PM)$/i.exec((slotLabel || '').trim());
@@ -65,27 +43,53 @@ export function formatTimeValueToSlotLabel(timeValue) {
   return `${String(hours).padStart(2, '0')}:${String(minutes).padStart(2, '0')} ${period}`;
 }
 
-export function getDoctorSlots(doctorId, fallbackSlots = []) {
-  const stored = parseStoredSlots();
-  const storedSlots = Array.isArray(stored?.[String(doctorId)]) ? stored[String(doctorId)] : [];
-
-  const merged = [...(fallbackSlots || []), ...storedSlots]
+export function mergeDoctorSlots(primarySlots = [], fallbackSlots = []) {
+  const merged = [...(fallbackSlots || []), ...(primarySlots || [])]
     .map(normalizeSlotLabel)
     .filter(Boolean);
 
   return Array.from(new Set(merged)).sort((a, b) => toSlotMinutes(a) - toSlotMinutes(b));
 }
 
-export function addDoctorSlot(doctorId, slotLabel, fallbackSlots = []) {
-  const normalized = normalizeSlotLabel(slotLabel);
-  if (!normalized) {
-    return getDoctorSlots(doctorId, fallbackSlots);
+export async function fetchDoctorSlotsByIds(doctorIds = []) {
+  const ids = Array.from(
+    new Set(
+      (doctorIds || [])
+        .map((value) => Number(value))
+        .filter((value) => Number.isFinite(value) && value > 0)
+    )
+  );
+
+  if (ids.length === 0) {
+    return {};
   }
 
-  const stored = parseStoredSlots();
-  const current = Array.isArray(stored?.[String(doctorId)]) ? stored[String(doctorId)] : [];
-  stored[String(doctorId)] = Array.from(new Set([...current, normalized]));
-  writeStoredSlots(stored);
+  const response = await axiosInstance.get('/doctor-slots', {
+    params: {
+      doctorIds: ids.join(',')
+    }
+  });
 
-  return getDoctorSlots(doctorId, fallbackSlots);
+  const records = Array.isArray(response.data) ? response.data : [];
+  return records.reduce((acc, item) => {
+    const doctorId = Number(item?.bookingDoctorId);
+    if (Number.isFinite(doctorId) && doctorId > 0) {
+      acc[doctorId] = mergeDoctorSlots(item?.slots || []);
+    }
+    return acc;
+  }, {});
+}
+
+export async function saveDoctorSlots({ bookingDoctorId, doctorName, slots }) {
+  const payload = {
+    bookingDoctorId: Number(bookingDoctorId),
+    doctorName: (doctorName || '').toString().trim(),
+    slots: mergeDoctorSlots(slots || [])
+  };
+
+  const response = await axiosInstance.put('/doctor-slots/me', payload);
+  return {
+    ...response.data,
+    slots: mergeDoctorSlots(response.data?.slots || [])
+  };
 }

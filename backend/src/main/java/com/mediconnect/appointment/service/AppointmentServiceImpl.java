@@ -3,6 +3,7 @@ package com.mediconnect.appointment.service;
 import com.mediconnect.appointment.model.Appointment;
 import com.mediconnect.appointment.model.AppointmentStatus;
 import com.mediconnect.appointment.repository.AppointmentRepository;
+import com.mediconnect.realtime.RealtimeEventPublisher;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.util.StringUtils;
@@ -15,9 +16,14 @@ import java.util.List;
 public class AppointmentServiceImpl implements AppointmentService {
 
     private final AppointmentRepository appointmentRepository;
+    private final RealtimeEventPublisher realtimeEventPublisher;
 
-    public AppointmentServiceImpl(AppointmentRepository appointmentRepository) {
+    public AppointmentServiceImpl(
+            AppointmentRepository appointmentRepository,
+            RealtimeEventPublisher realtimeEventPublisher
+    ) {
         this.appointmentRepository = appointmentRepository;
+        this.realtimeEventPublisher = realtimeEventPublisher;
     }
 
     @Override
@@ -53,7 +59,9 @@ public class AppointmentServiceImpl implements AppointmentService {
         if (appointment.getStatus() == null) {
             appointment.setStatus(AppointmentStatus.SCHEDULED);
         }
-        return appointmentRepository.save(appointment);
+        Appointment saved = appointmentRepository.save(appointment);
+        realtimeEventPublisher.publishAppointmentCreated(saved);
+        return saved;
     }
 
     @Override
@@ -70,7 +78,9 @@ public class AppointmentServiceImpl implements AppointmentService {
             existing.setStatus(appointmentDetails.getStatus());
         }
 
-        return appointmentRepository.save(existing);
+        Appointment saved = appointmentRepository.save(existing);
+        realtimeEventPublisher.publishAppointmentUpdated(saved);
+        return saved;
     }
 
     @Override
@@ -78,12 +88,15 @@ public class AppointmentServiceImpl implements AppointmentService {
     public Appointment cancelAppointment(Long id) {
         Appointment existing = getAppointmentById(id);
         existing.setStatus(AppointmentStatus.CANCELLED);
-        return appointmentRepository.save(existing);
+        Appointment saved = appointmentRepository.save(existing);
+        realtimeEventPublisher.publishAppointmentCancelled(saved);
+        return saved;
     }
 
     @Override
     @Transactional
     public void clearAllAndReset() {
         appointmentRepository.truncateAndResetId();
+        realtimeEventPublisher.publishAppointmentsCleared();
     }
 }

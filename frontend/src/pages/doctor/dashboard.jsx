@@ -6,6 +6,7 @@ import { useAuth } from '../../features/auth/hooks/useAuth';
 import { fetchAppointments, updateAppointment, cancelAppointment } from '../../api/appointments';
 import { DOCTORS } from '../../data/bookingData';
 import { fetchDoctorSlotsByIds, formatTimeValueToSlotLabel, mergeDoctorSlots, saveDoctorSlots } from '../../utils/doctorSlots';
+import { subscribeToRealtimeEvents } from '../../utils/realtime';
 import { 
   MoreHorizontal,
   Clock,
@@ -60,6 +61,24 @@ function buildDoctorSlotRef(doctorId, doctorName) {
    };
 }
 
+function mergeAppointmentById(currentAppointments, incomingAppointment) {
+   if (!incomingAppointment?.id) {
+      return currentAppointments;
+   }
+
+   const existingIndex = currentAppointments.findIndex(
+      (appointment) => appointment.id === incomingAppointment.id
+   );
+
+   if (existingIndex === -1) {
+      return [...currentAppointments, incomingAppointment];
+   }
+
+   return currentAppointments.map((appointment) =>
+      appointment.id === incomingAppointment.id ? incomingAppointment : appointment
+   );
+}
+
 export default function DoctorDashboard() {
    const router = useRouter();
    const { user, isAuthReady } = useAuth();
@@ -76,7 +95,6 @@ export default function DoctorDashboard() {
    const [slotTimeValue, setSlotTimeValue] = useState('');
    const [slotNotice, setSlotNotice] = useState('');
    const [doctorSlots, setDoctorSlots] = useState([]);
-   const [isSavingSlot, setIsSavingSlot] = useState(false);
 
    const doctorId = resolveBookingDoctorId(user);
    const displayName = (user?.name || 'Doctor').trim() || 'Doctor';
@@ -107,7 +125,54 @@ export default function DoctorDashboard() {
       return () => {
          cancelled = true;
       };
-    }, [displayName, doctorId]);
+   }, [displayName, doctorId]);
+
+   useEffect(() => {
+      if (!doctorId) {
+         return undefined;
+      }
+
+      return subscribeToRealtimeEvents((event) => {
+         if (event?.type !== 'doctor-slots.updated') {
+            return;
+         }
+
+         const payloadDoctorId = Number(event?.payload?.bookingDoctorId);
+         if (payloadDoctorId !== Number(doctorId)) {
+            return;
+         }
+
+         setDoctorSlots(
+            mergeDoctorSlots(event?.payload?.slots || [], getDoctorDefaultSlots(doctorId))
+         );
+      });
+   }, [doctorId]);
+
+   useEffect(() => {
+      if (!doctorId) {
+         return undefined;
+      }
+
+      return subscribeToRealtimeEvents((event) => {
+         const type = (event?.type || '').toString();
+         if (!type.startsWith('appointment.')) {
+            return;
+         }
+
+         if (type === 'appointment.cleared') {
+            setAppointments([]);
+            return;
+         }
+
+         const payload = event?.payload;
+         const payloadDoctorId = Number(payload?.doctorId);
+         if (payloadDoctorId !== Number(doctorId)) {
+            return;
+         }
+
+         setAppointments((current) => mergeAppointmentById(current, payload));
+      });
+   }, [doctorId]);
 
    useEffect(() => {
       let cancelled = false;
@@ -309,7 +374,6 @@ export default function DoctorDashboard() {
 
       const updatedSlots = mergeDoctorSlots([...doctorSlots, formattedSlot], getDoctorDefaultSlots(doctorId));
 
-      setIsSavingSlot(true);
       try {
          const saved = await saveDoctorSlots({
             bookingDoctorId: doctorId,
@@ -322,8 +386,6 @@ export default function DoctorDashboard() {
          setIsSlotPopupOpen(false);
       } catch {
          setSlotNotice('Could not save this slot right now.');
-      } finally {
-         setIsSavingSlot(false);
       }
    };
 
@@ -334,7 +396,6 @@ export default function DoctorDashboard() {
 
       const updatedSlots = doctorSlots.filter((slot) => slot !== slotToRemove);
 
-      setIsSavingSlot(true);
       try {
          const saved = await saveDoctorSlots({
             bookingDoctorId: doctorId,
@@ -342,11 +403,9 @@ export default function DoctorDashboard() {
             slots: updatedSlots
          });
          setDoctorSlots(mergeDoctorSlots(saved.slots || [], getDoctorDefaultSlots(doctorId)));
-         setSlotNotice(`${slotToRemove} marked unavailable.`);
+         setSlotNotice(`Marked ${slotToRemove} unavailable.`);
       } catch {
          setSlotNotice('Could not update slot availability right now.');
-      } finally {
-         setIsSavingSlot(false);
       }
    };
 
@@ -489,10 +548,8 @@ export default function DoctorDashboard() {
                                        <button
                                           type="button"
                                           key={`modal-${slot}`}
-                                          disabled={isSavingSlot}
                                           onClick={() => void handleMarkSlotUnavailable(slot)}
-                                          className="inline-flex items-center gap-1.5 rounded-full border border-teal-200 bg-white px-3 py-1 text-[11px] font-bold uppercase tracking-wider text-teal-700 transition-colors hover:border-rose-200 hover:bg-rose-50 hover:text-rose-700 disabled:cursor-not-allowed disabled:opacity-60"
-                                          title="Mark unavailable"
+                                          className="inline-flex items-center gap-2 rounded-full border border-teal-200 bg-white px-3 py-1 text-[11px] font-bold uppercase tracking-wider text-teal-700 transition hover:border-rose-200 hover:bg-rose-50 hover:text-rose-700"
                                        >
                                           {slot}
                                           <X size={12} />
@@ -502,15 +559,9 @@ export default function DoctorDashboard() {
                                     <p className="text-sm text-stone-500">No time slots added yet.</p>
                                  )}
                               </div>
-
-                              {doctorSlots.length > 0 ? (
-                                 <p className="mt-3 text-xs text-stone-500">
-                                    Click any slot to mark it unavailable for patients.
-                                 </p>
-                              ) : null}
                            </div>
 
-                           <div className="mt-5 rounded-2xl border border-stone-200 bg-white/90 p-4 shadow-[0_8px_24px_rgba(15,23,42,0.04)]">
+                           <div className="mt-4 rounded-2xl border border-stone-200 bg-white/90 p-4 shadow-[0_8px_24px_rgba(15,23,42,0.04)]">
                               <div className="flex items-center justify-between gap-3">
                                  <label className="block text-xs font-semibold uppercase tracking-[0.18em] text-stone-500">
                                     Consultation Time
@@ -534,18 +585,17 @@ export default function DoctorDashboard() {
                                  Pick the exact start time you want patients to see when they book.
                               </p>
 
-                              <div className="mt-4 flex items-center justify-between gap-3 rounded-2xl border border-dashed border-stone-200 bg-white/80 px-4 py-3">
-                                 <div>
+                              <div className="mt-4 flex flex-col gap-3 rounded-2xl border border-dashed border-stone-200 bg-stone-50/70 px-4 py-3 sm:flex-row sm:items-center sm:justify-between">
+                                 <div className="min-w-0">
                                     <p className="text-xs font-semibold uppercase tracking-[0.18em] text-stone-500">New Slot</p>
-                                    <p className="mt-1 text-sm text-stone-500">Add only the selected time to your availability.</p>
+                                    <p className="mt-1 text-sm text-stone-500">Pick a new consultation start time to add to your availability.</p>
                                  </div>
                                  <button
                                     type="button"
                                     onClick={handleAddSlot}
-                                    disabled={isSavingSlot}
-                                    className="shrink-0 rounded-xl bg-stone-900 px-4 py-2.5 text-[11px] font-bold uppercase tracking-wider text-white shadow-[0_10px_24px_rgba(15,23,42,0.18)] hover:bg-black disabled:cursor-not-allowed disabled:bg-stone-400"
+                                    className="shrink-0 rounded-xl bg-stone-900 px-4 py-3 text-xs font-bold uppercase tracking-wider text-white shadow-[0_10px_24px_rgba(15,23,42,0.18)] hover:bg-black"
                                  >
-                                    {isSavingSlot ? 'Saving...' : 'Add Time Slot'}
+                                    Add Time Slot
                                  </button>
                               </div>
                            </div>
@@ -564,7 +614,7 @@ export default function DoctorDashboard() {
                                className="rounded-xl bg-stone-900 px-5 py-2.5 text-xs font-bold uppercase tracking-wider text-white shadow-[0_10px_24px_rgba(15,23,42,0.18)] hover:bg-black"
                             >
                               Done
-                             </button>
+                            </button>
                            </div>
                         </div>
                      </div>

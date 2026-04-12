@@ -6,6 +6,7 @@ import PatientLayout from '../../components/PatientLayout';
 import { useAuth } from '../../features/auth/hooks/useAuth';
 import { fetchAppointments } from '../../api/appointments';
 import { DOCTORS } from '../../data/bookingData';
+import { subscribeToRealtimeEvents } from '../../utils/realtime';
 import { 
   HeartPulse, 
   Calendar, 
@@ -38,6 +39,24 @@ function namesLikelyMatch(a, b) {
   }
 
   return left === right || left.includes(right) || right.includes(left);
+}
+
+function mergeAppointmentById(currentAppointments, incomingAppointment) {
+  if (!incomingAppointment?.id) {
+    return currentAppointments;
+  }
+
+  const existingIndex = currentAppointments.findIndex(
+    (appointment) => appointment.id === incomingAppointment.id
+  );
+
+  if (existingIndex === -1) {
+    return [...currentAppointments, incomingAppointment];
+  }
+
+  return currentAppointments.map((appointment) =>
+    appointment.id === incomingAppointment.id ? incomingAppointment : appointment
+  );
 }
 
 export default function PatientDashboard() {
@@ -100,6 +119,31 @@ export default function PatientDashboard() {
     return () => {
       cancelled = true;
     };
+  }, [displayName]);
+
+  useEffect(() => {
+    if (!displayName) {
+      return undefined;
+    }
+
+    return subscribeToRealtimeEvents((event) => {
+      const type = (event?.type || '').toString();
+      if (!type.startsWith('appointment.')) {
+        return;
+      }
+
+      if (type === 'appointment.cleared') {
+        setAppointments([]);
+        return;
+      }
+
+      const payload = event?.payload;
+      if (!namesLikelyMatch(payload?.patientName, displayName)) {
+        return;
+      }
+
+      setAppointments((current) => mergeAppointmentById(current, payload));
+    });
   }, [displayName]);
 
   const doctorsById = useMemo(() => {

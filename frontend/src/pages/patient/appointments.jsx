@@ -16,6 +16,7 @@ import {
 } from 'lucide-react';
 import { CATEGORIES, DOCTORS } from '../../data/bookingData';
 import { fetchDoctorSlotsByIds, mergeDoctorSlots } from '../../utils/doctorSlots';
+import { subscribeToRealtimeEvents } from '../../utils/realtime';
 import { 
   createAppointment, 
   getAllAppointments, 
@@ -86,6 +87,45 @@ function formatDateTime(value) {
   };
 }
 
+function normalizeName(value) {
+  return (value || '')
+    .toString()
+    .toLowerCase()
+    .replace(/\b(dr|mr|mrs|ms)\.?\s+/g, '')
+    .replace(/[^a-z\s]/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+function namesLikelyMatch(a, b) {
+  const left = normalizeName(a);
+  const right = normalizeName(b);
+
+  if (!left || !right) {
+    return false;
+  }
+
+  return left === right || left.includes(right) || right.includes(left);
+}
+
+function mergeAppointmentById(currentAppointments, incomingAppointment) {
+  if (!incomingAppointment?.id) {
+    return currentAppointments;
+  }
+
+  const existingIndex = currentAppointments.findIndex(
+    (appointment) => appointment.id === incomingAppointment.id
+  );
+
+  if (existingIndex === -1) {
+    return [...currentAppointments, incomingAppointment];
+  }
+
+  return currentAppointments.map((appointment) =>
+    appointment.id === incomingAppointment.id ? incomingAppointment : appointment
+  );
+}
+
 function BookingWizard({ onCancel, onProceedToPayment }) {
   const { user } = useAuth();
   const [step, setStep] = useState(1);
@@ -132,6 +172,31 @@ function BookingWizard({ onCancel, onProceedToPayment }) {
     return () => {
       cancelled = true;
     };
+  }, [category]);
+
+  useEffect(() => {
+    const doctorsInCategory = DOCTORS[category] || [];
+    if (doctorsInCategory.length === 0) {
+      return undefined;
+    }
+
+    const doctorIds = new Set(doctorsInCategory.map((item) => Number(item.id)));
+
+    return subscribeToRealtimeEvents((event) => {
+      if (event?.type !== 'doctor-slots.updated') {
+        return;
+      }
+
+      const payloadDoctorId = Number(event?.payload?.bookingDoctorId);
+      if (!doctorIds.has(payloadDoctorId)) {
+        return;
+      }
+
+      setDoctorSlotMap((current) => ({
+        ...current,
+        [payloadDoctorId]: mergeDoctorSlots(event?.payload?.slots || [])
+      }));
+    });
   }, [category]);
 
   const doctors = useMemo(() => {
@@ -338,12 +403,14 @@ function BookingWizard({ onCancel, onProceedToPayment }) {
 
 export default function Appointments() {
   const router = useRouter();
+  const { user } = useAuth();
   const [activeTab, setActiveTab] = useState('upcoming');
   const [isBooking, setIsBooking] = useState(false);
   const [appointments, setAppointments] = useState([]);
   const [cancelingIds, setCancelingIds] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
+  const patientDisplayName = user?.name?.trim() || '';
 
   const doctorMap = useMemo(() => {
     return Object.entries(DOCTORS).reduce((acc, [categoryId, doctors]) => {
@@ -374,6 +441,31 @@ export default function Appointments() {
   useEffect(() => {
     loadAppointments();
   }, []);
+
+  useEffect(() => {
+    if (!patientDisplayName) {
+      return undefined;
+    }
+
+    return subscribeToRealtimeEvents((event) => {
+      const type = (event?.type || '').toString();
+      if (!type.startsWith('appointment.')) {
+        return;
+      }
+
+      if (type === 'appointment.cleared') {
+        setAppointments([]);
+        return;
+      }
+
+      const payload = event?.payload;
+      if (!namesLikelyMatch(payload?.patientName, patientDisplayName)) {
+        return;
+      }
+
+      setAppointments((current) => mergeAppointmentById(current, payload));
+    });
+  }, [patientDisplayName]);
 
   const handleProceedToPayment = async (payload) => {
     if (typeof window !== 'undefined') {

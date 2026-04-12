@@ -1,5 +1,6 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { fetchConsultationSession } from '../api/consultation';
+import { useAuth } from '../features/auth/hooks/useAuth';
 import {
   Camera,
   CameraOff,
@@ -50,6 +51,7 @@ export default function ConsultationCallPanel({
   participant,
   onLeave
 }) {
+  const { isAuthReady, user } = useAuth();
   const localVideoRef = useRef(null);
   const remoteVideoRef = useRef(null);
   const localStreamRef = useRef(null);
@@ -57,6 +59,7 @@ export default function ConsultationCallPanel({
   const engineRef = useRef(null);
   const publishedStreamIdRef = useRef('');
   const playingStreamIdRef = useRef('');
+  const activeRoomNameRef = useRef(roomName);
 
   const [joiningCall, setJoiningCall] = useState(true);
   const [callError, setCallError] = useState('');
@@ -95,7 +98,7 @@ export default function ConsultationCallPanel({
 
       if (engineRef.current) {
         try {
-          engineRef.current.logoutRoom(roomName);
+          engineRef.current.logoutRoom(activeRoomNameRef.current || roomName);
         } catch {}
         try {
           engineRef.current.destroyEngine();
@@ -112,7 +115,7 @@ export default function ConsultationCallPanel({
     };
 
     const handleRemoteStreamUpdate = async (roomID, updateType, streamList) => {
-      if (disposed || roomID !== roomName) {
+      if (disposed || roomID !== activeRoomNameRef.current) {
         return;
       }
 
@@ -164,6 +167,16 @@ export default function ConsultationCallPanel({
     };
 
     const startCall = async () => {
+      if (!isAuthReady) {
+        return;
+      }
+
+      if (!user) {
+        setJoiningCall(false);
+        setCallError('You need to be signed in to start the consultation room.');
+        return;
+      }
+
       setJoiningCall(true);
       setCallError('');
 
@@ -183,9 +196,12 @@ export default function ConsultationCallPanel({
           throw new Error('ZEGOCLOUD video engine did not load correctly.');
         }
 
-        if (!session?.token || !session?.appId || !session?.serverUrl || !session?.userId) {
+      if (!session?.token || !session?.appId || !session?.serverUrl || !session?.userId) {
           throw new Error('Consultation session is missing ZEGO credentials.');
         }
+
+        const activeRoomName = session.roomName || roomName;
+        activeRoomNameRef.current = activeRoomName;
 
         const ZegoExpressEngine = typeof zegoEngineGlobal === 'function'
           ? zegoEngineGlobal
@@ -194,7 +210,7 @@ export default function ConsultationCallPanel({
         engineRef.current = zg;
 
         zg.on('roomStateUpdate', (currentRoomId, state, errorCode) => {
-          if (currentRoomId !== roomName || disposed) {
+          if (currentRoomId !== activeRoomName || disposed) {
             return;
           }
 
@@ -211,7 +227,7 @@ export default function ConsultationCallPanel({
         });
 
         await zg.loginRoom(
-          roomName,
+          activeRoomName,
           session.token,
           {
             userID: session.userId,
@@ -245,7 +261,7 @@ export default function ConsultationCallPanel({
         console.error('Custom consultation room failed to start', roomError);
         if (!disposed) {
           setJoiningCall(false);
-          setCallError(
+        setCallError(
             roomError instanceof Error
               ? roomError.message
               : 'Could not start the custom ZEGOCLOUD consultation room.'
@@ -260,7 +276,7 @@ export default function ConsultationCallPanel({
       disposed = true;
       cleanupMedia();
     };
-  }, [appointmentId, participant.userId, participant.userName, remoteLabel, roomName]);
+  }, [appointmentId, isAuthReady, participant.userId, participant.userName, remoteLabel, roomName, user]);
 
   const toggleMicrophone = () => {
     if (!engineRef.current || !localStreamRef.current) {
@@ -388,7 +404,7 @@ export default function ConsultationCallPanel({
 
           <div className="mt-4 flex flex-wrap items-center justify-between gap-3">
             <div className={`text-sm ${heroSubTextTone}`}>
-              {role === 'doctor' ? 'Doctor side' : 'Patient side'} active in room {roomName}
+              {role === 'doctor' ? 'Doctor side' : 'Patient side'} active in room {activeRoomNameRef.current || roomName}
             </div>
             <div className="flex items-center gap-3">
               <button

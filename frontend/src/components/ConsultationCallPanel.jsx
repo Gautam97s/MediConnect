@@ -20,6 +20,23 @@ async function loadZegoExpressEngine() {
   );
 }
 
+function describeZegoErrorCode(errorCode) {
+  if (!errorCode) {
+    return '';
+  }
+
+  const knownCodes = {
+    1002001: 'Network unavailable',
+    1002002: 'Network interrupted',
+    1002034: 'Token expired or invalid',
+    1102018: 'No microphone or camera permission',
+    1103024: 'Publishing stream failed',
+    1103049: 'Playing stream failed'
+  };
+
+  return knownCodes[errorCode] || '';
+}
+
 function bindMediaStream(videoElement, mediaStream, muted = false) {
   if (!videoElement) {
     return;
@@ -136,7 +153,8 @@ export default function ConsultationCallPanel({
 
           remoteStreamRef.current = remoteStream;
           playingStreamIdRef.current = candidate.streamID;
-          bindMediaStream(remoteVideoRef.current, remoteStream, false);
+          // Keep remote video muted to avoid autoplay blocks that can leave video blank.
+          bindMediaStream(remoteVideoRef.current, remoteStream, true);
           setRemoteConnected(true);
           setRemoteStatus(`${remoteLabel} is in the room.`);
         } catch (playError) {
@@ -226,6 +244,36 @@ export default function ConsultationCallPanel({
           void handleRemoteStreamUpdate(currentRoomId, updateType, streamList);
         });
 
+        zg.on('publisherStateUpdate', (result) => {
+          if (!result?.streamID || result.streamID !== publishedStreamIdRef.current || disposed) {
+            return;
+          }
+
+          if (result.state === 'NO_PUBLISH' && result.errorCode) {
+            const detail = describeZegoErrorCode(result.errorCode);
+            setCallError(
+              detail
+                ? `Could not publish your video (${result.errorCode}: ${detail}).`
+                : `Could not publish your video (${result.errorCode}).`
+            );
+          }
+        });
+
+        zg.on('playerStateUpdate', (result) => {
+          if (!result?.streamID || result.streamID !== playingStreamIdRef.current || disposed) {
+            return;
+          }
+
+          if (result.state === 'NO_PLAY' && result.errorCode) {
+            const detail = describeZegoErrorCode(result.errorCode);
+            setRemoteStatus(
+              detail
+                ? `Remote stream failed (${result.errorCode}: ${detail}).`
+                : `Remote stream failed (${result.errorCode}).`
+            );
+          }
+        });
+
         await zg.loginRoom(
           activeRoomName,
           session.token,
@@ -237,6 +285,8 @@ export default function ConsultationCallPanel({
             userUpdate: true
           }
         );
+
+        setRemoteStatus('Connected. Waiting for remote participant stream...');
 
         if (disposed) {
           return;
@@ -252,7 +302,10 @@ export default function ConsultationCallPanel({
 
         const publishedStreamId = `consult-${appointmentId}-${participant.userId}`;
         publishedStreamIdRef.current = publishedStreamId;
-        zg.startPublishingStream(publishedStreamId, localStream);
+        const publishStarted = zg.startPublishingStream(publishedStreamId, localStream);
+        if (publishStarted === false) {
+          throw new Error('Could not start publishing local stream.');
+        }
 
         setJoiningCall(false);
         setMicEnabled(true);

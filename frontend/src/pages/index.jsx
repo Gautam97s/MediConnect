@@ -93,8 +93,8 @@ export default function Home() {
                   <div><h3 className="font-bold text-stone-900">Dr. Jenkins Queue</h3><p className="text-xs text-stone-500">4 Patients Waiting</p></div>
                 </div>
                 <div className="space-y-3">
-                   <div className="flex justify-between items-center bg-stone-50 p-3 rounded-xl"><span className="text-sm font-bold text-stone-800">10:00 AM</span><span className="text-xs bg-teal-100 text-teal-700 px-2 py-1 rounded-md font-bold">Consultation</span></div>
-                   <div className="flex justify-between items-center bg-stone-50 p-3 rounded-xl"><span className="text-sm font-bold text-stone-800">10:30 AM</span><span className="text-xs bg-stone-200 text-stone-600 px-2 py-1 rounded-md font-bold">Follow-up</span></div>
+                   <div className="flex justify-between items-center bg-stone-50 p-3 rounded-xl"><span className="text-sm font-bold text-stone-800">Live queue updates</span><span className="text-xs bg-teal-100 text-teal-700 px-2 py-1 rounded-md font-bold">Active</span></div>
+                   <div className="flex justify-between items-center bg-stone-50 p-3 rounded-xl"><span className="text-sm font-bold text-stone-800">No fixed time slots</span><span className="text-xs bg-stone-200 text-stone-600 px-2 py-1 rounded-md font-bold">Dynamic</span></div>
                 </div>
              </div>
            </div>

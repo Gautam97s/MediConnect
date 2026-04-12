@@ -2,7 +2,6 @@ import Head from 'next/head';
 import { useRouter } from 'next/router';
 import { useEffect } from 'react';
 import { useAuth } from '../features/auth/hooks/useAuth';
-import DoctorSidebar from './DoctorSidebar';
 
 export default function DoctorLayout({ children, title, activePage }) {
   const router = useRouter();
@@ -32,15 +31,14 @@ export default function DoctorLayout({ children, title, activePage }) {
   }
 
   return (
-    <div className="min-h-screen w-full bg-gradient-to-br from-[#f8fafc] to-[#eef2f6] flex flex-col lg:h-screen lg:flex-row font-sans text-stone-800 antialiased selection:bg-teal-200 lg:overflow-hidden">
+    <div className="min-h-screen w-full bg-gradient-to-br from-[#f8fafc] via-[#f5f9fb] to-[#eef2f6] font-sans text-stone-800 antialiased selection:bg-teal-200">
       <Head>
         <title>{`${title} | MediConnect`}</title>
       </Head>
 
-      <DoctorSidebar activePage={activePage} />
-
-      {/* Main Content Area */}
-      {children}
+      <div className="mx-auto flex min-h-screen w-full max-w-[1680px] flex-col">
+        {children}
+      </div>
     </div>
   );
 }

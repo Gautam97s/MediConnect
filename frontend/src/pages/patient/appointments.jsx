@@ -38,9 +38,9 @@ function parseSlotToDate(timeSlot) {
     return `${year}-${month}-${day}T${hours}:${minutes}:${seconds}`;
   };
 
-  const match = /(\d{1,2}):(\d{2})\s*(AM|PM)/i.exec(timeSlot || '10:00 AM');
+  const match = /(\d{1,2}):(\d{2})\s*(AM|PM)/i.exec(timeSlot || '');
   if (!match) {
-    date.setHours(10, 0, 0, 0);
+    date.setMinutes(0, 0, 0);
     return toLocalDateTimeString(date);
   }
 
@@ -203,7 +203,7 @@ function BookingWizard({ onCancel, onProceedToPayment }) {
     const list = DOCTORS[category] || [];
     return list.map((doc) => ({
       ...doc,
-      availableSlots: mergeDoctorSlots(doctorSlotMap[doc.id] || [], doc.availableSlots)
+      availableSlots: mergeDoctorSlots(doctorSlotMap[doc.id] || [])
     }));
   }, [category, doctorSlotMap]);
 

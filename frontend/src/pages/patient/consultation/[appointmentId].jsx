@@ -102,24 +102,24 @@ export default function PatientConsultationPage() {
   );
 
   return (
-    <PatientLayout title="Consultation" activePage="appointments">
+    <PatientLayout title="Consultation" activePage="appointments" hideSidebar={true}>
       <main className="flex-1 px-4 py-6 sm:px-6 lg:px-8 lg:py-8 flex flex-col overflow-y-auto">
-        <div className="mb-6 flex items-center justify-between gap-4">
+        <div className="mb-5 flex items-center justify-between gap-4">
           <div className="flex items-center gap-3">
             <button
               type="button"
               onClick={() => router.push('/patient/dashboard')}
-              className="rounded-full border border-stone-200 bg-white p-2 text-stone-600 hover:bg-stone-50"
+              className="rounded-full border border-stone-200 bg-white p-1.5 text-stone-600 hover:bg-stone-50"
             >
-              <ArrowLeft size={18} />
+              <ArrowLeft size={16} />
             </button>
             <div>
-              <h1 className="text-3xl font-extrabold tracking-tight text-stone-900">Consultation Room</h1>
-              <p className="mt-1 text-sm font-medium text-stone-500">Secure appointment session</p>
+              <h1 className="text-2xl font-extrabold tracking-tight text-stone-900">Consultation Room</h1>
+              <p className="mt-0.5 text-xs font-medium text-stone-500">Secure appointment session</p>
             </div>
           </div>
-          <span className="inline-flex items-center gap-2 rounded-full border border-teal-200 bg-teal-50 px-4 py-2 text-xs font-bold uppercase tracking-wider text-teal-700">
-            <ShieldCheck size={14} />
+          <span className="inline-flex items-center gap-1.5 rounded-full border border-teal-200 bg-teal-50 px-3 py-1.5 text-[10px] font-bold uppercase tracking-wider text-teal-700">
+            <ShieldCheck size={12} />
             Private Call
           </span>
         </div>
@@ -133,7 +133,7 @@ export default function PatientConsultationPage() {
             {error}
           </div>
         ) : (
-          <div className="grid grid-cols-1 2xl:grid-cols-[minmax(0,1.85fr)_320px] gap-6">
+          <div className="grid grid-cols-1 2xl:grid-cols-[minmax(0,1.85fr)_300px] gap-5">
             <ConsultationCallPanel
               role="patient"
               appointmentId={appointmentId}
@@ -143,39 +143,39 @@ export default function PatientConsultationPage() {
               onLeave={() => router.push('/patient/dashboard')}
             />
 
-            <aside className="space-y-6">
-              <section className="rounded-[2rem] border border-stone-100 bg-white p-6 shadow-[0_8px_30px_rgb(0,0,0,0.04)]">
-                <h3 className="text-lg font-extrabold text-stone-900">Session Details</h3>
-                <div className="mt-5 space-y-4 text-sm">
-                  <div className="flex items-center gap-3 text-stone-700">
-                    <Calendar size={16} className="text-stone-400" />
+            <aside className="space-y-4">
+              <section className="rounded-3xl border border-stone-100 bg-white p-5 shadow-[0_8px_30px_rgb(0,0,0,0.04)]">
+                <h3 className="text-base font-extrabold text-stone-900">Session Details</h3>
+                <div className="mt-4 space-y-3 text-[13px]">
+                  <div className="flex items-center gap-2.5 text-stone-700">
+                    <Calendar size={14} className="text-stone-400" />
                     <span>{sessionSummary.day}</span>
                   </div>
-                  <div className="flex items-center gap-3 text-stone-700">
-                    <Clock3 size={16} className="text-stone-400" />
+                  <div className="flex items-center gap-2.5 text-stone-700">
+                    <Clock3 size={14} className="text-stone-400" />
                     <span>{sessionSummary.time}</span>
                   </div>
-                  <div className="flex items-start gap-3 text-stone-700">
-                    <Stethoscope size={16} className="mt-0.5 text-stone-400" />
-                    <span>{appointment?.reason || 'General consultation'}</span>
+                  <div className="flex items-start gap-2.5 text-stone-700">
+                    <Stethoscope size={14} className="mt-0.5 text-stone-400" />
+                    <span className="leading-snug">{appointment?.reason || 'General consultation'}</span>
                   </div>
-                  <div className="flex items-center gap-3 text-stone-700">
-                    <UserRound size={16} className="text-stone-400" />
-                    <span>{roomName}</span>
+                  <div className="flex items-center gap-2.5 text-stone-700">
+                    <UserRound size={14} className="text-stone-400" />
+                    <span className="truncate">{roomName}</span>
                   </div>
                 </div>
               </section>
 
-              <section className="rounded-[2rem] border border-stone-100 bg-white p-6 shadow-[0_8px_30px_rgb(0,0,0,0.04)]">
-                <h3 className="text-lg font-extrabold text-stone-900">Preparation Checklist</h3>
-                <div className="mt-4 space-y-3 text-sm text-stone-600">
-                  <div className="flex items-start gap-3">
-                    <MessageSquareText size={16} className="mt-0.5 text-teal-600" />
-                    <span>Keep your symptoms, medications, and questions ready.</span>
+              <section className="rounded-3xl border border-stone-100 bg-white p-5 shadow-[0_8px_30px_rgb(0,0,0,0.04)]">
+                <h3 className="text-base font-extrabold text-stone-900">Preparation Checklist</h3>
+                <div className="mt-3 space-y-2.5 text-[13px] text-stone-600">
+                  <div className="flex items-start gap-2.5">
+                    <MessageSquareText size={14} className="mt-0.5 text-teal-600" />
+                    <span className="leading-snug">Keep your symptoms, medications, and questions ready.</span>
                   </div>
-                  <div className="flex items-start gap-3">
-                    <ShieldCheck size={16} className="mt-0.5 text-teal-600" />
-                    <span>Use a quiet space with stable internet for the clearest call.</span>
+                  <div className="flex items-start gap-2.5">
+                    <ShieldCheck size={14} className="mt-0.5 text-teal-600" />
+                    <span className="leading-snug">Use a quiet space with stable internet for the clearest call.</span>
                   </div>
                 </div>
               </section>

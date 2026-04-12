@@ -77,6 +77,7 @@ export default function ConsultationCallPanel({
   const publishedStreamIdRef = useRef('');
   const playingStreamIdRef = useRef('');
   const activeRoomNameRef = useRef(roomName);
+  const sessionUserIdRef = useRef('');
 
   const [joiningCall, setJoiningCall] = useState(true);
   const [callError, setCallError] = useState('');
@@ -85,6 +86,20 @@ export default function ConsultationCallPanel({
   const [micEnabled, setMicEnabled] = useState(true);
   const [cameraEnabled, setCameraEnabled] = useState(true);
   const [remoteStatus, setRemoteStatus] = useState('Waiting for the other participant to join.');
+  const [roomStateLabel, setRoomStateLabel] = useState('INIT');
+  const [roomStateErrorCode, setRoomStateErrorCode] = useState(0);
+  const [loginStatus, setLoginStatus] = useState('PENDING');
+  const [publishState, setPublishState] = useState('IDLE');
+  const [publishErrorCode, setPublishErrorCode] = useState(0);
+  const [playState, setPlayState] = useState('IDLE');
+  const [playErrorCode, setPlayErrorCode] = useState(0);
+  const [publishedStreamIdState, setPublishedStreamIdState] = useState('');
+  const [playingStreamIdState, setPlayingStreamIdState] = useState('');
+  const [sessionDebug, setSessionDebug] = useState({
+    appId: '',
+    userId: '',
+    serverUrl: ''
+  });
 
   const remoteLabel = useMemo(
     () => buildRemoteLabel(role, appointment),
@@ -136,30 +151,57 @@ export default function ConsultationCallPanel({
         return;
       }
 
-      const candidate = (streamList || []).find(
-        (stream) => stream?.streamID && stream.streamID !== publishedStreamIdRef.current
-      );
+      const candidates = (streamList || []).filter((stream) => {
+        if (!stream?.streamID) {
+          return false;
+        }
 
-      if (updateType === 'ADD' && candidate) {
-        try {
-          if (playingStreamIdRef.current && playingStreamIdRef.current !== candidate.streamID) {
-            engineRef.current?.stopPlayingStream(playingStreamIdRef.current);
+        if (stream.streamID === publishedStreamIdRef.current) {
+          return false;
+        }
+
+        if (stream?.user?.userID && stream.user.userID === sessionUserIdRef.current) {
+          return false;
+        }
+
+        return true;
+      });
+
+      if (updateType === 'ADD' && candidates.length > 0) {
+        let played = false;
+
+        for (const candidate of candidates) {
+          try {
+            setPlayState('PLAY_REQUESTING');
+            if (playingStreamIdRef.current && playingStreamIdRef.current !== candidate.streamID) {
+              engineRef.current?.stopPlayingStream(playingStreamIdRef.current);
+            }
+
+            const remoteStream = await engineRef.current.startPlayingStream(candidate.streamID, {
+              video: true,
+              audio: true
+            });
+
+            if (disposed) {
+              return;
+            }
+
+            remoteStreamRef.current = remoteStream;
+            playingStreamIdRef.current = candidate.streamID;
+            setPlayingStreamIdState(candidate.streamID);
+            // Keep remote video muted to avoid autoplay blocks that can leave video blank.
+            bindMediaStream(remoteVideoRef.current, remoteStream, true);
+            setRemoteConnected(true);
+            setRemoteStatus(`${remoteLabel} is in the room.`);
+            played = true;
+            break;
+          } catch (playError) {
+            console.error('Could not play candidate remote stream', candidate?.streamID, playError);
           }
+        }
 
-          const remoteStream = await engineRef.current.startPlayingStream(candidate.streamID);
-          if (disposed) {
-            return;
-          }
-
-          remoteStreamRef.current = remoteStream;
-          playingStreamIdRef.current = candidate.streamID;
-          // Keep remote video muted to avoid autoplay blocks that can leave video blank.
-          bindMediaStream(remoteVideoRef.current, remoteStream, true);
-          setRemoteConnected(true);
-          setRemoteStatus(`${remoteLabel} is in the room.`);
-        } catch (playError) {
-          console.error('Could not play remote stream', playError);
-          setRemoteStatus('Connected to the room, but the remote video could not start.');
+        if (!played) {
+          setRemoteStatus('Connected to the room, but no playable remote stream was found yet.');
         }
       }
 
@@ -176,6 +218,7 @@ export default function ConsultationCallPanel({
           }
 
           playingStreamIdRef.current = '';
+          setPlayingStreamIdState('');
           remoteStreamRef.current = null;
           bindMediaStream(remoteVideoRef.current, null, false);
           setRemoteConnected(false);
@@ -197,6 +240,7 @@ export default function ConsultationCallPanel({
 
       setJoiningCall(true);
       setCallError('');
+      setLoginStatus('REQUESTING');
 
       try {
         const [session, zegoEngineGlobal] = await Promise.all([
@@ -220,11 +264,17 @@ export default function ConsultationCallPanel({
 
         const activeRoomName = session.roomName || roomName;
         activeRoomNameRef.current = activeRoomName;
+        sessionUserIdRef.current = session.userId;
+        setSessionDebug({
+          appId: String(session.appId || ''),
+          userId: session.userId || '',
+          serverUrl: session.serverUrl || ''
+        });
 
         const ZegoExpressEngine = typeof zegoEngineGlobal === 'function'
           ? zegoEngineGlobal
           : zegoEngineGlobal.ZegoExpressEngine;
-        const zg = new ZegoExpressEngine(session.appId, session.serverUrl, { scenario: 0 });
+        const zg = new ZegoExpressEngine(session.appId, session.serverUrl, { scenario: 4 });
         engineRef.current = zg;
 
         zg.on('roomStateUpdate', (currentRoomId, state, errorCode) => {
@@ -234,8 +284,21 @@ export default function ConsultationCallPanel({
 
           const connected = state === 'CONNECTED';
           setIsConnected(connected);
+          setRoomStateLabel(state || 'UNKNOWN');
+          setRoomStateErrorCode(errorCode || 0);
 
-          if (!connected && errorCode) {
+          if (state === 'DISCONNECTED') {
+            if (errorCode) {
+              const detail = describeZegoErrorCode(errorCode);
+              setCallError(
+                detail
+                  ? `Room disconnected (${errorCode}: ${detail}).`
+                  : `Room disconnected (${errorCode}).`
+              );
+            } else {
+              setCallError('Room disconnected. Please rejoin the consultation.');
+            }
+          } else if (!connected && errorCode) {
             setCallError(`Room connection failed with code ${errorCode}.`);
           }
         });
@@ -248,6 +311,9 @@ export default function ConsultationCallPanel({
           if (!result?.streamID || result.streamID !== publishedStreamIdRef.current || disposed) {
             return;
           }
+
+          setPublishState(result.state || 'UNKNOWN');
+          setPublishErrorCode(result.errorCode || 0);
 
           if (result.state === 'NO_PUBLISH' && result.errorCode) {
             const detail = describeZegoErrorCode(result.errorCode);
@@ -264,6 +330,9 @@ export default function ConsultationCallPanel({
             return;
           }
 
+          setPlayState(result.state || 'UNKNOWN');
+          setPlayErrorCode(result.errorCode || 0);
+
           if (result.state === 'NO_PLAY' && result.errorCode) {
             const detail = describeZegoErrorCode(result.errorCode);
             setRemoteStatus(
@@ -274,7 +343,7 @@ export default function ConsultationCallPanel({
           }
         });
 
-        await zg.loginRoom(
+        const loginOk = await zg.loginRoom(
           activeRoomName,
           session.token,
           {
@@ -285,6 +354,13 @@ export default function ConsultationCallPanel({
             userUpdate: true
           }
         );
+
+        if (!loginOk) {
+          setLoginStatus('FAILED');
+          throw new Error('Could not join consultation room. Please verify ZEGO credentials and room access.');
+        }
+
+        setLoginStatus('SUCCESS');
 
         setRemoteStatus('Connected. Waiting for remote participant stream...');
 
@@ -300,18 +376,23 @@ export default function ConsultationCallPanel({
         localStreamRef.current = localStream;
         bindMediaStream(localVideoRef.current, localStream, true);
 
-        const publishedStreamId = `consult-${appointmentId}-${participant.userId}`;
+        const publishedStreamId = `consult-${appointmentId}-${session.userId}-${Date.now()}`;
         publishedStreamIdRef.current = publishedStreamId;
+        setPublishedStreamIdState(publishedStreamId);
         const publishStarted = zg.startPublishingStream(publishedStreamId, localStream);
         if (publishStarted === false) {
+          setPublishState('NO_PUBLISH');
           throw new Error('Could not start publishing local stream.');
         }
+
+        setPublishState('PUBLISH_REQUESTING');
 
         setJoiningCall(false);
         setMicEnabled(true);
         setCameraEnabled(true);
       } catch (roomError) {
         console.error('Custom consultation room failed to start', roomError);
+        setLoginStatus('FAILED');
         if (!disposed) {
           setJoiningCall(false);
         setCallError(
@@ -482,6 +563,27 @@ export default function ConsultationCallPanel({
                 <PhoneOff size={16} />
                 Leave Session
               </button>
+            </div>
+          </div>
+
+          <div className="mt-3 grid grid-cols-1 gap-2 text-xs md:grid-cols-2">
+            <div className={`rounded-xl border px-3 py-2 ${role === 'doctor' ? 'border-white/10 bg-black/20 text-stone-200' : 'border-stone-200 bg-black/20 text-stone-200'}`}>
+              Room: {roomStateLabel} | RoomErr: {roomStateErrorCode || 0} | Login: {loginStatus}
+            </div>
+            <div className={`rounded-xl border px-3 py-2 ${role === 'doctor' ? 'border-white/10 bg-black/20 text-stone-200' : 'border-stone-200 bg-black/20 text-stone-200'}`}>
+              Session user: {sessionDebug.userId || '-'} | App: {sessionDebug.appId || '-'}
+            </div>
+            <div className={`rounded-xl border px-3 py-2 ${role === 'doctor' ? 'border-white/10 bg-black/20 text-stone-200' : 'border-stone-200 bg-black/20 text-stone-200'}`}>
+              Publish: {publishState} | PubErr: {publishErrorCode || 0}
+            </div>
+            <div className={`rounded-xl border px-3 py-2 ${role === 'doctor' ? 'border-white/10 bg-black/20 text-stone-200' : 'border-stone-200 bg-black/20 text-stone-200'}`}>
+              Play: {playState} | PlayErr: {playErrorCode || 0}
+            </div>
+            <div className={`rounded-xl border px-3 py-2 ${role === 'doctor' ? 'border-white/10 bg-black/20 text-stone-200' : 'border-stone-200 bg-black/20 text-stone-200'}`}>
+              PubStream: {publishedStreamIdState || '-'}
+            </div>
+            <div className={`rounded-xl border px-3 py-2 ${role === 'doctor' ? 'border-white/10 bg-black/20 text-stone-200' : 'border-stone-200 bg-black/20 text-stone-200'}`}>
+              PlayStream: {playingStreamIdState || '-'}
             </div>
           </div>
         </div>

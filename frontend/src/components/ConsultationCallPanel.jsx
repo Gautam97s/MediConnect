@@ -231,8 +231,10 @@ export default function ConsultationCallPanel({
             playingStreamIdRef.current = candidate.streamID;
             setPlayingStreamIdState(candidate.streamID);
             setRemoteTracksState(getTrackSummary(playableRemoteStream));
-            // Keep remote video muted to avoid autoplay blocks that can leave video blank.
-            bindMediaStream(remoteVideoRef.current, playableRemoteStream, true);
+            bindMediaStream(remoteVideoRef.current, playableRemoteStream, false);
+            void engineRef.current
+              ?.mutePlayStreamAudio(candidate.streamID, false)
+              .catch(() => {});
             setRemoteConnected(true);
             if (getTrackSummary(playableRemoteStream).video === 0) {
               setRemoteStatus(`${remoteLabel} joined, but remote stream currently has no video track.`);
@@ -474,7 +476,7 @@ export default function ConsultationCallPanel({
 
     // Re-bind after React mounts/shows the remote video element.
     const raf = requestAnimationFrame(() => {
-      bindMediaStream(remoteVideoRef.current, remoteStreamRef.current, true);
+      bindMediaStream(remoteVideoRef.current, remoteStreamRef.current, false);
     });
 
     return () => cancelAnimationFrame(raf);
@@ -572,7 +574,6 @@ export default function ConsultationCallPanel({
                 className={`h-full w-full object-cover ${remoteConnected ? '' : 'invisible'}`}
                 autoPlay
                 playsInline
-                muted
               />
               {!remoteConnected ? (
                 <div className="flex h-full items-center justify-center bg-[radial-gradient(circle_at_center,_rgba(255,255,255,0.08),_transparent_55%)]">

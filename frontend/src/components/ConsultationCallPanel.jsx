@@ -52,6 +52,38 @@ function bindMediaStream(videoElement, mediaStream, muted = false) {
   }
 }
 
+function toNativeMediaStream(streamLike) {
+  if (!streamLike) {
+    return null;
+  }
+
+  if (typeof streamLike.getTracks === 'function') {
+    return streamLike;
+  }
+
+  if (streamLike.mediaStream && typeof streamLike.mediaStream.getTracks === 'function') {
+    return streamLike.mediaStream;
+  }
+
+  if (streamLike.stream && typeof streamLike.stream.getTracks === 'function') {
+    return streamLike.stream;
+  }
+
+  return null;
+}
+
+function getTrackSummary(streamLike) {
+  const stream = toNativeMediaStream(streamLike);
+  if (!stream) {
+    return { audio: 0, video: 0 };
+  }
+
+  return {
+    audio: stream.getAudioTracks().length,
+    video: stream.getVideoTracks().length
+  };
+}
+
 function buildRemoteLabel(role, appointment) {
   if (role === 'doctor') {
     return appointment?.patientName || 'Patient';
@@ -95,6 +127,14 @@ export default function ConsultationCallPanel({
   const [playErrorCode, setPlayErrorCode] = useState(0);
   const [publishedStreamIdState, setPublishedStreamIdState] = useState('');
   const [playingStreamIdState, setPlayingStreamIdState] = useState('');
+  const [localTracksState, setLocalTracksState] = useState({ audio: 0, video: 0 });
+  const [remoteTracksState, setRemoteTracksState] = useState({ audio: 0, video: 0 });
+  const [remoteVideoStats, setRemoteVideoStats] = useState({
+    readyState: 0,
+    width: 0,
+    height: 0,
+    currentTime: '0.00'
+  });
   const [sessionDebug, setSessionDebug] = useState({
     appId: '',
     userId: '',
@@ -186,13 +226,19 @@ export default function ConsultationCallPanel({
               return;
             }
 
-            remoteStreamRef.current = remoteStream;
+            const playableRemoteStream = toNativeMediaStream(remoteStream);
+            remoteStreamRef.current = playableRemoteStream;
             playingStreamIdRef.current = candidate.streamID;
             setPlayingStreamIdState(candidate.streamID);
+            setRemoteTracksState(getTrackSummary(playableRemoteStream));
             // Keep remote video muted to avoid autoplay blocks that can leave video blank.
-            bindMediaStream(remoteVideoRef.current, remoteStream, true);
+            bindMediaStream(remoteVideoRef.current, playableRemoteStream, true);
             setRemoteConnected(true);
-            setRemoteStatus(`${remoteLabel} is in the room.`);
+            if (getTrackSummary(playableRemoteStream).video === 0) {
+              setRemoteStatus(`${remoteLabel} joined, but remote stream currently has no video track.`);
+            } else {
+              setRemoteStatus(`${remoteLabel} is in the room.`);
+            }
             played = true;
             break;
           } catch (playError) {
@@ -220,6 +266,7 @@ export default function ConsultationCallPanel({
           playingStreamIdRef.current = '';
           setPlayingStreamIdState('');
           remoteStreamRef.current = null;
+          setRemoteTracksState({ audio: 0, video: 0 });
           bindMediaStream(remoteVideoRef.current, null, false);
           setRemoteConnected(false);
           setRemoteStatus('Waiting for the other participant to rejoin.');
@@ -368,18 +415,26 @@ export default function ConsultationCallPanel({
           return;
         }
 
-        const localStream = await zg.createStream();
+        const localStream = await zg.createStream({
+          camera: {
+            audio: true,
+            video: true,
+            videoQuality: 2
+          }
+        });
         if (disposed) {
           return;
         }
 
-        localStreamRef.current = localStream;
-        bindMediaStream(localVideoRef.current, localStream, true);
+        const playableLocalStream = toNativeMediaStream(localStream);
+        localStreamRef.current = playableLocalStream;
+        setLocalTracksState(getTrackSummary(playableLocalStream));
+        bindMediaStream(localVideoRef.current, playableLocalStream, true);
 
         const publishedStreamId = `consult-${appointmentId}-${session.userId}-${Date.now()}`;
         publishedStreamIdRef.current = publishedStreamId;
         setPublishedStreamIdState(publishedStreamId);
-        const publishStarted = zg.startPublishingStream(publishedStreamId, localStream);
+        const publishStarted = zg.startPublishingStream(publishedStreamId, playableLocalStream);
         if (publishStarted === false) {
           setPublishState('NO_PUBLISH');
           throw new Error('Could not start publishing local stream.');
@@ -411,6 +466,37 @@ export default function ConsultationCallPanel({
       cleanupMedia();
     };
   }, [appointmentId, isAuthReady, participant.userId, participant.userName, remoteLabel, roomName, user]);
+
+  useEffect(() => {
+    if (!remoteConnected || !remoteStreamRef.current) {
+      return;
+    }
+
+    // Re-bind after React mounts/shows the remote video element.
+    const raf = requestAnimationFrame(() => {
+      bindMediaStream(remoteVideoRef.current, remoteStreamRef.current, true);
+    });
+
+    return () => cancelAnimationFrame(raf);
+  }, [remoteConnected, playingStreamIdState]);
+
+  useEffect(() => {
+    const timer = setInterval(() => {
+      const element = remoteVideoRef.current;
+      if (!element) {
+        return;
+      }
+
+      setRemoteVideoStats({
+        readyState: element.readyState || 0,
+        width: element.videoWidth || 0,
+        height: element.videoHeight || 0,
+        currentTime: Number.isFinite(element.currentTime) ? element.currentTime.toFixed(2) : '0.00'
+      });
+    }, 1000);
+
+    return () => clearInterval(timer);
+  }, []);
 
   const toggleMicrophone = () => {
     if (!engineRef.current || !localStreamRef.current) {
@@ -481,14 +567,14 @@ export default function ConsultationCallPanel({
         <div className={`mt-6 rounded-[1.8rem] border p-4 ${frameTone}`}>
           <div className="relative min-h-[520px] overflow-hidden rounded-[1.45rem] bg-[#2b2f40]">
             <div className="absolute inset-0">
-              {remoteConnected ? (
-                <video
-                  ref={remoteVideoRef}
-                  className="h-full w-full object-cover"
-                  autoPlay
-                  playsInline
-                />
-              ) : (
+              <video
+                ref={remoteVideoRef}
+                className={`h-full w-full object-cover ${remoteConnected ? '' : 'invisible'}`}
+                autoPlay
+                playsInline
+                muted
+              />
+              {!remoteConnected ? (
                 <div className="flex h-full items-center justify-center bg-[radial-gradient(circle_at_center,_rgba(255,255,255,0.08),_transparent_55%)]">
                   <div className="text-center">
                     <div className={`mx-auto flex h-28 w-28 items-center justify-center rounded-full text-5xl ${role === 'doctor' ? 'bg-white/10 text-emerald-300' : 'bg-white/10 text-emerald-400'}`}>
@@ -499,7 +585,7 @@ export default function ConsultationCallPanel({
                     </p>
                   </div>
                 </div>
-              )}
+              ) : null}
             </div>
 
             <div className="absolute bottom-6 right-6 z-10 h-56 w-80 overflow-hidden rounded-[1.35rem] border border-white/15 bg-black shadow-2xl">
@@ -578,6 +664,15 @@ export default function ConsultationCallPanel({
             </div>
             <div className={`rounded-xl border px-3 py-2 ${role === 'doctor' ? 'border-white/10 bg-black/20 text-stone-200' : 'border-stone-200 bg-black/20 text-stone-200'}`}>
               Play: {playState} | PlayErr: {playErrorCode || 0}
+            </div>
+            <div className={`rounded-xl border px-3 py-2 ${role === 'doctor' ? 'border-white/10 bg-black/20 text-stone-200' : 'border-stone-200 bg-black/20 text-stone-200'}`}>
+              Local tracks A/V: {localTracksState.audio}/{localTracksState.video}
+            </div>
+            <div className={`rounded-xl border px-3 py-2 ${role === 'doctor' ? 'border-white/10 bg-black/20 text-stone-200' : 'border-stone-200 bg-black/20 text-stone-200'}`}>
+              Remote tracks A/V: {remoteTracksState.audio}/{remoteTracksState.video}
+            </div>
+            <div className={`rounded-xl border px-3 py-2 ${role === 'doctor' ? 'border-white/10 bg-black/20 text-stone-200' : 'border-stone-200 bg-black/20 text-stone-200'}`}>
+              Remote video rs:{remoteVideoStats.readyState} size:{remoteVideoStats.width}x{remoteVideoStats.height} t:{remoteVideoStats.currentTime}
             </div>
             <div className={`rounded-xl border px-3 py-2 ${role === 'doctor' ? 'border-white/10 bg-black/20 text-stone-200' : 'border-stone-200 bg-black/20 text-stone-200'}`}>
               PubStream: {publishedStreamIdState || '-'}

@@ -8,6 +8,7 @@ import com.mediconnect.doctorslots.model.DoctorAvailability;
 import com.mediconnect.doctorslots.model.DoctorAvailabilityRequest;
 import com.mediconnect.doctorslots.model.DoctorAvailabilityResponse;
 import com.mediconnect.doctorslots.repository.DoctorAvailabilityRepository;
+import com.mediconnect.realtime.RealtimeEventPublisher;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -25,15 +26,18 @@ public class DoctorAvailabilityService {
     private final DoctorAvailabilityRepository doctorAvailabilityRepository;
     private final AuthUserRepository authUserRepository;
     private final JwtService jwtService;
+    private final RealtimeEventPublisher realtimeEventPublisher;
 
     public DoctorAvailabilityService(
             DoctorAvailabilityRepository doctorAvailabilityRepository,
             AuthUserRepository authUserRepository,
-            JwtService jwtService
+            JwtService jwtService,
+            RealtimeEventPublisher realtimeEventPublisher
     ) {
         this.doctorAvailabilityRepository = doctorAvailabilityRepository;
         this.authUserRepository = authUserRepository;
         this.jwtService = jwtService;
+        this.realtimeEventPublisher = realtimeEventPublisher;
     }
 
     public List<DoctorAvailabilityResponse> getDoctorSlots(String doctorIdsParam) {
@@ -77,7 +81,9 @@ public class DoctorAvailabilityService {
         availability.setSlots(normalizedSlots);
 
         DoctorAvailability saved = doctorAvailabilityRepository.save(availability);
-        return toResponse(saved);
+        DoctorAvailabilityResponse response = toResponse(saved);
+        realtimeEventPublisher.publishDoctorSlotsUpdated(response);
+        return response;
     }
 
     private AuthUser resolveCurrentUser(String authorizationHeader) {

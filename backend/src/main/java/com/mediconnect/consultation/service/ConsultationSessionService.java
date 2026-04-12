@@ -116,13 +116,15 @@ public class ConsultationSessionService {
 
     private void validateUserCanJoin(AuthUser user, Appointment appointment) {
         if (user.getRole() == UserRole.DOCTOR) {
+            boolean appointmentUsesKnownDoctorId = authUserRepository.findById(appointment.getDoctorId()).isPresent()
+                    || doctorProfileRepository.findById(appointment.getDoctorId()).isPresent();
             boolean matchesAuthUserId = user.getId().equals(appointment.getDoctorId());
             boolean matchesDoctorProfileId = doctorProfileRepository.findByUser(user)
                     .map(DoctorProfile::getId)
                     .filter(profileId -> profileId.equals(appointment.getDoctorId()))
                     .isPresent();
 
-            if (!matchesAuthUserId && !matchesDoctorProfileId) {
+            if (appointmentUsesKnownDoctorId && !matchesAuthUserId && !matchesDoctorProfileId) {
                 throw new ResponseStatusException(HttpStatus.FORBIDDEN, "Doctor cannot join another doctor's consultation");
             }
         }

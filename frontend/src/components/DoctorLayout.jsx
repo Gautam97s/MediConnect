@@ -2,8 +2,9 @@ import Head from 'next/head';
 import { useRouter } from 'next/router';
 import { useEffect } from 'react';
 import { useAuth } from '../features/auth/hooks/useAuth';
+import DoctorSidebar from './DoctorSidebar';
 
-export default function DoctorLayout({ children, title, activePage }) {
+export default function DoctorLayout({ children, title, activePage, showSidebar = true }) {
   const router = useRouter();
   const { isAuthenticated, isAuthReady, user } = useAuth();
 
@@ -36,8 +37,11 @@ export default function DoctorLayout({ children, title, activePage }) {
         <title>{`${title} | MediConnect`}</title>
       </Head>
 
-      <div className="mx-auto flex min-h-screen w-full max-w-[1680px] flex-col">
-        {children}
+      <div className={`mx-auto flex min-h-screen w-full max-w-[1680px] flex-col ${showSidebar ? 'lg:flex-row' : ''}`}>
+        {showSidebar ? <DoctorSidebar activePage={activePage} /> : null}
+        <div className="flex min-h-0 flex-1 flex-col">
+          {children}
+        </div>
       </div>
     </div>
   );

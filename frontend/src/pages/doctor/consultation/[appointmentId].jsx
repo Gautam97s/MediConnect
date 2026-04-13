@@ -137,7 +137,7 @@ export default function DoctorConsultationPage() {
   );
 
   return (
-    <DoctorLayout title="Consultation" activePage="dashboard">
+    <DoctorLayout title="Consultation" activePage="dashboard" showSidebar={false}>
       <main className="flex-1 px-4 py-6 sm:px-6 lg:px-8 lg:py-8 flex flex-col min-h-0 overflow-y-auto">
         <div className="mb-5 flex items-center justify-between gap-4">
           <div className="flex items-center gap-3">

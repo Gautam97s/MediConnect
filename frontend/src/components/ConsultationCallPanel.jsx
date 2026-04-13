@@ -20,6 +20,23 @@ async function loadZegoExpressEngine() {
   );
 }
 
+function describeZegoErrorCode(errorCode) {
+  if (!errorCode) {
+    return '';
+  }
+
+  const knownCodes = {
+    1002001: 'Network unavailable',
+    1002002: 'Network interrupted',
+    1002034: 'Token expired or invalid',
+    1102018: 'No microphone or camera permission',
+    1103024: 'Publishing stream failed',
+    1103049: 'Playing stream failed'
+  };
+
+  return knownCodes[errorCode] || '';
+}
+
 function bindMediaStream(videoElement, mediaStream, muted = false) {
   if (!videoElement) {
     return;
@@ -33,6 +50,26 @@ function bindMediaStream(videoElement, mediaStream, muted = false) {
   if (mediaStream) {
     void videoElement.play().catch(() => {});
   }
+}
+
+function toNativeMediaStream(streamLike) {
+  if (!streamLike) {
+    return null;
+  }
+
+  if (typeof streamLike.getTracks === 'function') {
+    return streamLike;
+  }
+
+  if (streamLike.mediaStream && typeof streamLike.mediaStream.getTracks === 'function') {
+    return streamLike.mediaStream;
+  }
+
+  if (streamLike.stream && typeof streamLike.stream.getTracks === 'function') {
+    return streamLike.stream;
+  }
+
+  return null;
 }
 
 function buildRemoteLabel(role, appointment) {
@@ -60,6 +97,7 @@ export default function ConsultationCallPanel({
   const publishedStreamIdRef = useRef('');
   const playingStreamIdRef = useRef('');
   const activeRoomNameRef = useRef(roomName);
+  const sessionUserIdRef = useRef('');
 
   const [joiningCall, setJoiningCall] = useState(true);
   const [callError, setCallError] = useState('');
@@ -119,29 +157,58 @@ export default function ConsultationCallPanel({
         return;
       }
 
-      const candidate = (streamList || []).find(
-        (stream) => stream?.streamID && stream.streamID !== publishedStreamIdRef.current
-      );
+      const candidates = (streamList || []).filter((stream) => {
+        if (!stream?.streamID) {
+          return false;
+        }
 
-      if (updateType === 'ADD' && candidate) {
-        try {
-          if (playingStreamIdRef.current && playingStreamIdRef.current !== candidate.streamID) {
-            engineRef.current?.stopPlayingStream(playingStreamIdRef.current);
+        if (stream.streamID === publishedStreamIdRef.current) {
+          return false;
+        }
+
+        if (stream?.user?.userID && stream.user.userID === sessionUserIdRef.current) {
+          return false;
+        }
+
+        return true;
+      });
+
+      if (updateType === 'ADD' && candidates.length > 0) {
+        let played = false;
+
+        for (const candidate of candidates) {
+          try {
+            if (playingStreamIdRef.current && playingStreamIdRef.current !== candidate.streamID) {
+              engineRef.current?.stopPlayingStream(playingStreamIdRef.current);
+            }
+
+            const remoteStream = await engineRef.current.startPlayingStream(candidate.streamID, {
+              video: true,
+              audio: true
+            });
+
+            if (disposed) {
+              return;
+            }
+
+            const playableRemoteStream = toNativeMediaStream(remoteStream);
+            remoteStreamRef.current = playableRemoteStream;
+            playingStreamIdRef.current = candidate.streamID;
+            bindMediaStream(remoteVideoRef.current, playableRemoteStream, false);
+            void engineRef.current
+              ?.mutePlayStreamAudio(candidate.streamID, false)
+              .catch(() => {});
+            setRemoteConnected(true);
+            setRemoteStatus(`${remoteLabel} is in the room.`);
+            played = true;
+            break;
+          } catch (playError) {
+            console.error('Could not play candidate remote stream', candidate?.streamID, playError);
           }
+        }
 
-          const remoteStream = await engineRef.current.startPlayingStream(candidate.streamID);
-          if (disposed) {
-            return;
-          }
-
-          remoteStreamRef.current = remoteStream;
-          playingStreamIdRef.current = candidate.streamID;
-          bindMediaStream(remoteVideoRef.current, remoteStream, false);
-          setRemoteConnected(true);
-          setRemoteStatus(`${remoteLabel} is in the room.`);
-        } catch (playError) {
-          console.error('Could not play remote stream', playError);
-          setRemoteStatus('Connected to the room, but the remote video could not start.');
+        if (!played) {
+          setRemoteStatus('Connected to the room, but no playable remote stream was found yet.');
         }
       }
 
@@ -202,11 +269,12 @@ export default function ConsultationCallPanel({
 
         const activeRoomName = session.roomName || roomName;
         activeRoomNameRef.current = activeRoomName;
+        sessionUserIdRef.current = session.userId;
 
         const ZegoExpressEngine = typeof zegoEngineGlobal === 'function'
           ? zegoEngineGlobal
           : zegoEngineGlobal.ZegoExpressEngine;
-        const zg = new ZegoExpressEngine(session.appId, session.serverUrl, { scenario: 0 });
+        const zg = new ZegoExpressEngine(session.appId, session.serverUrl, { scenario: 4 });
         engineRef.current = zg;
 
         zg.on('roomStateUpdate', (currentRoomId, state, errorCode) => {
@@ -217,7 +285,18 @@ export default function ConsultationCallPanel({
           const connected = state === 'CONNECTED';
           setIsConnected(connected);
 
-          if (!connected && errorCode) {
+          if (state === 'DISCONNECTED') {
+            if (errorCode) {
+              const detail = describeZegoErrorCode(errorCode);
+              setCallError(
+                detail
+                  ? `Room disconnected (${errorCode}: ${detail}).`
+                  : `Room disconnected (${errorCode}).`
+              );
+            } else {
+              setCallError('Room disconnected. Please rejoin the consultation.');
+            }
+          } else if (!connected && errorCode) {
             setCallError(`Room connection failed with code ${errorCode}.`);
           }
         });
@@ -226,7 +305,37 @@ export default function ConsultationCallPanel({
           void handleRemoteStreamUpdate(currentRoomId, updateType, streamList);
         });
 
-        await zg.loginRoom(
+        zg.on('publisherStateUpdate', (result) => {
+          if (!result?.streamID || result.streamID !== publishedStreamIdRef.current || disposed) {
+            return;
+          }
+
+          if (result.state === 'NO_PUBLISH' && result.errorCode) {
+            const detail = describeZegoErrorCode(result.errorCode);
+            setCallError(
+              detail
+                ? `Could not publish your video (${result.errorCode}: ${detail}).`
+                : `Could not publish your video (${result.errorCode}).`
+            );
+          }
+        });
+
+        zg.on('playerStateUpdate', (result) => {
+          if (!result?.streamID || result.streamID !== playingStreamIdRef.current || disposed) {
+            return;
+          }
+
+          if (result.state === 'NO_PLAY' && result.errorCode) {
+            const detail = describeZegoErrorCode(result.errorCode);
+            setRemoteStatus(
+              detail
+                ? `Remote stream failed (${result.errorCode}: ${detail}).`
+                : `Remote stream failed (${result.errorCode}).`
+            );
+          }
+        });
+
+        const loginOk = await zg.loginRoom(
           activeRoomName,
           session.token,
           {
@@ -238,21 +347,37 @@ export default function ConsultationCallPanel({
           }
         );
 
+        if (!loginOk) {
+          throw new Error('Could not join consultation room. Please verify ZEGO credentials and room access.');
+        }
+
+        setRemoteStatus('Connected. Waiting for remote participant stream...');
+
         if (disposed) {
           return;
         }
 
-        const localStream = await zg.createStream();
+        const localStream = await zg.createStream({
+          camera: {
+            audio: true,
+            video: true,
+            videoQuality: 2
+          }
+        });
         if (disposed) {
           return;
         }
 
-        localStreamRef.current = localStream;
-        bindMediaStream(localVideoRef.current, localStream, true);
+        const playableLocalStream = toNativeMediaStream(localStream);
+        localStreamRef.current = playableLocalStream;
+        bindMediaStream(localVideoRef.current, playableLocalStream, true);
 
-        const publishedStreamId = `consult-${appointmentId}-${participant.userId}`;
+        const publishedStreamId = `consult-${appointmentId}-${session.userId}-${Date.now()}`;
         publishedStreamIdRef.current = publishedStreamId;
-        zg.startPublishingStream(publishedStreamId, localStream);
+        const publishStarted = zg.startPublishingStream(publishedStreamId, playableLocalStream);
+        if (publishStarted === false) {
+          throw new Error('Could not start publishing local stream.');
+        }
 
         setJoiningCall(false);
         setMicEnabled(true);
@@ -261,11 +386,19 @@ export default function ConsultationCallPanel({
         console.error('Custom consultation room failed to start', roomError);
         if (!disposed) {
           setJoiningCall(false);
-        setCallError(
-            roomError instanceof Error
-              ? roomError.message
-              : 'Could not start the custom ZEGOCLOUD consultation room.'
-          );
+          let errorMsg = 'Could not start the custom ZEGOCLOUD consultation room.';
+          
+          if (roomError instanceof Error) {
+            errorMsg = roomError.message;
+          } else if (roomError && typeof roomError === 'object' && roomError.msg) {
+            errorMsg = roomError.msg;
+          }
+
+          if (errorMsg.includes('NotReadableError') || errorMsg.includes('device is not readable')) {
+            errorMsg = 'Camera or Microhpone is currently blocked. Please make sure no other applications (like Zoom, Teams, or Meet) are using your camera, then refresh the page.';
+          }
+
+          setCallError(errorMsg);
         }
       }
     };
@@ -277,6 +410,19 @@ export default function ConsultationCallPanel({
       cleanupMedia();
     };
   }, [appointmentId, isAuthReady, participant.userId, participant.userName, remoteLabel, roomName, user]);
+
+  useEffect(() => {
+    if (!remoteConnected || !remoteStreamRef.current) {
+      return;
+    }
+
+    // Re-bind after React mounts/shows the remote video element.
+    const raf = requestAnimationFrame(() => {
+      bindMediaStream(remoteVideoRef.current, remoteStreamRef.current, false);
+    });
+
+    return () => cancelAnimationFrame(raf);
+  }, [remoteConnected]);
 
   const toggleMicrophone = () => {
     if (!engineRef.current || !localStreamRef.current) {
@@ -302,65 +448,77 @@ export default function ConsultationCallPanel({
     setCameraEnabled(nextCameraEnabled);
   };
 
-  const shellTone =
-    role === 'doctor'
-      ? 'bg-[radial-gradient(circle_at_top_left,_rgba(20,184,166,0.24),_transparent_32%),linear-gradient(180deg,#0f172a_0%,#020617_100%)] text-white'
-      : 'bg-[radial-gradient(circle_at_top_right,_rgba(20,184,166,0.14),_transparent_30%),linear-gradient(180deg,#ffffff_0%,#f4f8f8_100%)] text-stone-900';
-  const frameTone = role === 'doctor'
-    ? 'border-white/10 bg-[#191d31]'
-    : 'border-stone-200 bg-[#202437]';
-  const heroSubTextTone = role === 'doctor' ? 'text-stone-300' : 'text-stone-500';
-  const frameSubTextTone = 'text-stone-300';
-  const pillTone = role === 'doctor'
-    ? 'bg-white/10 text-white'
-    : 'bg-stone-900 text-white';
-  const controlTone = role === 'doctor'
-    ? 'bg-white/10 text-white hover:bg-white/15'
-    : 'bg-white/12 text-white hover:bg-white/20';
-  const errorTone = role === 'doctor'
-    ? 'border-rose-300/40 bg-rose-500/15 text-rose-100'
+  const isDoctor = role === 'doctor';
+
+  const shellTone = isDoctor
+    ? 'bg-white text-stone-900'
+    : 'bg-[radial-gradient(circle_at_top_right,_rgba(20,184,166,0.14),_transparent_30%),linear-gradient(180deg,#ffffff_0%,#f4f8f8_100%)] text-stone-900';
+  
+  const frameTone = isDoctor
+    ? ''
+    : 'border-stone-200 bg-[#202437] rounded-[1.8rem] border p-4 mt-6';
+
+  const heroSubTextTone = isDoctor ? 'text-stone-500' : 'text-stone-500';
+  const videoBgTone = 'bg-stone-900';
+  
+  // Custom controls for Doctor (floating glassmorphic bar)
+  const doctorControlTone = 'bg-white/10 text-white hover:bg-white/20 border border-white/20 backdrop-blur-md transition-all shadow-lg';
+  const doctorDisconnectTone = 'bg-rose-500/90 text-white hover:bg-rose-500 border border-white/20 backdrop-blur-md transition-all shadow-lg hover:bg-rose-600';
+  
+  const patientControlTone = 'bg-white/12 text-white hover:bg-white/20';
+  const errorTone = isDoctor
+    ? 'border-rose-200 bg-rose-50/90 text-rose-700 shadow-sm'
     : 'border-rose-200 bg-rose-50 text-rose-700';
 
-  return (
-    <section className={`overflow-hidden rounded-[2rem] shadow-[0_20px_60px_rgba(15,23,42,0.12)] ${role === 'doctor' ? 'bg-stone-950' : 'bg-white'}`}>
-      <div className={`p-6 lg:p-8 ${shellTone}`}>
-        <div className="flex items-start justify-between gap-4">
+  if (isDoctor) {
+    return (
+      <section className="overflow-hidden rounded-[2.5rem] bg-white border border-stone-100 shadow-[0_8px_40px_rgba(0,0,0,0.06)] flex flex-col h-full ring-1 ring-stone-900/5">
+        
+        {/* Header - Editorial Style */}
+        <div className="px-6 lg:px-8 mt-6 flex items-center justify-between pb-5 border-b border-stone-100/80">
           <div>
-            <p className={`text-xs font-bold uppercase tracking-[0.24em] ${role === 'doctor' ? 'text-teal-300' : 'text-teal-700'}`}>
-              {role === 'doctor' ? 'Live Consultation' : 'Video Consultation'}
-            </p>
-            <h2 className="mt-3 text-3xl font-extrabold tracking-tight">
-              {role === 'doctor' ? appointment?.patientName || 'Patient' : remoteLabel}
+            <div className="flex items-center gap-3">
+              <span className="relative flex h-2.5 w-2.5">
+                {isConnected && <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>}
+                <span className={`relative inline-flex rounded-full h-2.5 w-2.5 ${isConnected ? 'bg-emerald-500' : 'bg-amber-500'}`}></span>
+              </span>
+              <p className="text-[10px] font-bold uppercase tracking-[0.2em] text-teal-600">
+                Live Consultation
+              </p>
+            </div>
+            <h2 className="mt-1.5 text-2xl font-extrabold tracking-tight text-stone-900">
+              {appointment?.patientName || 'Patient'}
             </h2>
-            <p className={`mt-2 text-sm ${heroSubTextTone}`}>
-              {role === 'doctor'
-                ? 'Review symptoms, guide the patient, and capture clinical notes without leaving the session.'
-                : 'Join your doctor in a focused one-on-one consultation room built directly into the app.'}
+          </div>
+          
+          <div className="flex flex-col items-end">
+            <span className={`inline-flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-bold uppercase tracking-wider transition-colors ${isConnected ? 'bg-emerald-50 text-emerald-700 border border-emerald-100' : 'bg-amber-50 text-amber-700 border border-amber-100'}`}>
+              {isConnected ? 'Session Active' : 'Waiting for connection...'}
+            </span>
+            <p className="mt-1.5 text-[10px] font-medium text-stone-400 uppercase tracking-widest text-right">
+              Room • {activeRoomNameRef.current || roomName}
             </p>
           </div>
-          <span className={`inline-flex items-center gap-2 rounded-full px-3 py-1 text-xs font-bold uppercase tracking-wider ${pillTone}`}>
-            <span className={`h-2.5 w-2.5 rounded-full ${isConnected ? 'bg-emerald-400' : 'bg-amber-400'}`} />
-            {isConnected ? 'Connected' : 'Connecting'}
-          </span>
         </div>
 
-        <div className={`mt-6 rounded-[1.8rem] border p-4 ${frameTone}`}>
-          <div className="relative min-h-[520px] overflow-hidden rounded-[1.45rem] bg-[#2b2f40]">
+        {/* Video Area - Immersive layout */}
+        <div className="p-5 lg:p-6 flex-1 flex flex-col min-h-0 bg-stone-50/50">
+          <div className="relative w-full max-w-[900px] mx-auto h-[550px] overflow-hidden rounded-[2rem] bg-stone-950 shadow-inner group ring-1 ring-stone-900/10">
+            {/* Remote Video Stream */}
             <div className="absolute inset-0">
-              {remoteConnected ? (
-                <video
-                  ref={remoteVideoRef}
-                  className="h-full w-full object-cover"
-                  autoPlay
-                  playsInline
-                />
-              ) : (
-                <div className="flex h-full items-center justify-center bg-[radial-gradient(circle_at_center,_rgba(255,255,255,0.08),_transparent_55%)]">
-                  <div className="text-center">
-                    <div className={`mx-auto flex h-28 w-28 items-center justify-center rounded-full text-5xl ${role === 'doctor' ? 'bg-white/10 text-emerald-300' : 'bg-white/10 text-emerald-400'}`}>
+              <video
+                ref={remoteVideoRef}
+                className={`h-full w-full object-cover transition-opacity duration-700 ${remoteConnected ? 'opacity-100' : 'opacity-0'}`}
+                autoPlay
+                playsInline
+              />
+              {!remoteConnected && (
+                <div className="flex h-full items-center justify-center bg-[radial-gradient(circle_at_center,_rgba(255,255,255,0.04),_transparent_60%)]">
+                  <div className="text-center transform transition-transform hover:scale-105 duration-500">
+                    <div className="mx-auto flex h-24 w-24 items-center justify-center rounded-2xl bg-stone-800/60 shadow-2xl backdrop-blur-xl border border-stone-700/50 text-5xl text-stone-300 font-light">
                       {(remoteLabel || 'R').charAt(0).toUpperCase()}
                     </div>
-                    <p className={`mt-5 text-base font-semibold ${frameSubTextTone}`}>
+                    <p className="mt-4 text-xs font-medium tracking-wide text-stone-400">
                       {remoteStatus}
                     </p>
                   </div>
@@ -368,7 +526,8 @@ export default function ConsultationCallPanel({
               )}
             </div>
 
-            <div className="absolute bottom-6 right-6 z-10 h-56 w-80 overflow-hidden rounded-[1.35rem] border border-white/15 bg-black shadow-2xl">
+            {/* Local Video Stream (PIP) */}
+            <div className="absolute top-6 right-6 z-10 w-36 h-52 overflow-hidden rounded-2xl border border-white/10 bg-stone-900 shadow-2xl transition-transform hover:scale-[1.02] duration-300 ease-out">
               <video
                 ref={localVideoRef}
                 className={`h-full w-full object-cover ${cameraEnabled ? '' : 'hidden'}`}
@@ -376,58 +535,183 @@ export default function ConsultationCallPanel({
                 playsInline
                 muted
               />
-              {!cameraEnabled ? (
-                <div className="flex h-full items-center justify-center bg-black text-stone-400">
-                  <CameraOff size={34} />
+              {!cameraEnabled && (
+                <div className="flex h-full items-center justify-center bg-stone-900 text-stone-600">
+                  <CameraOff size={24} strokeWidth={1.5} />
                 </div>
-              ) : null}
-              <div className="absolute bottom-3 left-3 rounded-full bg-black/70 px-3 py-1 text-sm font-semibold text-white backdrop-blur">
+              )}
+              <div className="absolute bottom-3 left-3 right-3 text-center rounded-xl bg-black/50 py-1.5 text-[10px] font-semibold tracking-wide text-white/90 backdrop-blur-md border border-white/5 truncate px-1">
                 {participant.userName} (You)
               </div>
             </div>
 
-            {joiningCall ? (
-              <div className="absolute inset-0 z-20 flex items-center justify-center bg-black/45">
-                <div className="flex items-center gap-3 rounded-full bg-white/10 px-5 py-3 text-sm font-semibold text-white backdrop-blur">
-                  <LoaderCircle size={18} className="animate-spin" />
-                  Preparing your call...
+            {/* Overlays */}
+            {joiningCall && (
+              <div className="absolute inset-0 z-20 flex items-center justify-center bg-stone-900/40 backdrop-blur-sm">
+                <div className="flex items-center gap-3 rounded-2xl bg-white/10 px-6 py-4 text-sm font-semibold text-white/90 backdrop-blur-xl border border-white/10 shadow-2xl">
+                  <LoaderCircle size={20} className="animate-spin text-teal-400" />
+                  Preparing secure session...
                 </div>
               </div>
-            ) : null}
+            )}
 
-            {callError ? (
-              <div className={`absolute inset-x-6 top-6 z-20 rounded-2xl border px-4 py-3 text-sm font-semibold backdrop-blur ${errorTone}`}>
+            {callError && (
+              <div className="absolute top-6 left-1/2 -translate-x-1/2 z-20 rounded-2xl border border-rose-500/30 bg-rose-500/20 px-6 py-3 text-sm font-medium text-rose-100 backdrop-blur-xl shadow-lg flex items-center gap-3">
+                <span className="w-2 h-2 rounded-full bg-rose-400 animate-pulse" />
                 {callError}
               </div>
-            ) : null}
-          </div>
+            )}
 
-          <div className="mt-4 flex flex-wrap items-center justify-between gap-3">
-            <div className={`text-sm ${heroSubTextTone}`}>
-              {role === 'doctor' ? 'Doctor side' : 'Patient side'} active in room {activeRoomNameRef.current || roomName}
-            </div>
-            <div className="flex items-center gap-3">
+            {/* Floating Control Bar */}
+            <div className="absolute bottom-6 left-1/2 -translate-x-1/2 z-30 flex items-center gap-2.5">
               <button
                 type="button"
                 onClick={toggleMicrophone}
-                className={`inline-flex h-12 w-12 items-center justify-center rounded-2xl transition ${micEnabled ? controlTone : 'bg-amber-500 text-white hover:bg-amber-600'}`}
+                className={`inline-flex h-10 w-10 items-center justify-center rounded-[0.8rem] transition-all duration-300 ${micEnabled ? doctorControlTone : 'bg-rose-500 text-white hover:bg-rose-600 shadow-rose-500/25 shadow-lg'}`}
+                title={micEnabled ? "Mute Microphone" : "Unmute Microphone"}
               >
-                {micEnabled ? <Mic size={18} /> : <MicOff size={18} />}
+                {micEnabled ? <Mic size={16} strokeWidth={2} /> : <MicOff size={16} strokeWidth={2} />}
               </button>
               <button
                 type="button"
                 onClick={toggleCamera}
-                className={`inline-flex h-12 w-12 items-center justify-center rounded-2xl transition ${cameraEnabled ? controlTone : 'bg-amber-500 text-white hover:bg-amber-600'}`}
+                className={`inline-flex h-10 w-10 items-center justify-center rounded-[0.8rem] transition-all duration-300 ${cameraEnabled ? doctorControlTone : 'bg-rose-500 text-white hover:bg-rose-600 shadow-rose-500/25 shadow-lg'}`}
+                title={cameraEnabled ? "Turn off Camera" : "Turn on Camera"}
               >
-                {cameraEnabled ? <Camera size={18} /> : <CameraOff size={18} />}
+                {cameraEnabled ? <Camera size={16} strokeWidth={2} /> : <CameraOff size={16} strokeWidth={2} />}
               </button>
               <button
                 type="button"
                 onClick={onLeave}
-                className="inline-flex items-center gap-2 rounded-2xl bg-rose-500 px-5 py-3 text-sm font-bold uppercase tracking-wider text-white transition hover:bg-rose-600"
+                className={`inline-flex h-10 items-center gap-2 rounded-[0.8rem] px-4 font-bold uppercase tracking-wider text-[10px] ${doctorDisconnectTone}`}
               >
-                <PhoneOff size={16} />
-                Leave Session
+                <PhoneOff size={14} strokeWidth={2.5} />
+                End Call
+              </button>
+            </div>
+          </div>
+        </div>
+      </section>
+    );
+  }
+
+  // Patient view
+  return (
+    <section className="overflow-hidden rounded-[2.5rem] bg-white shadow-[0_8px_40px_rgba(0,0,0,0.06)] flex flex-col h-full ring-1 ring-stone-900/5">
+      <div className={`flex flex-col h-full ${shellTone}`}>
+        {/* Header - Editorial Style */}
+        <div className="px-6 lg:px-8 mt-6 flex items-center justify-between pb-5 border-b border-stone-100/80">
+          <div>
+            <div className="flex items-center gap-3">
+              <span className="relative flex h-2.5 w-2.5">
+                {isConnected && <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>}
+                <span className={`relative inline-flex rounded-full h-2.5 w-2.5 ${isConnected ? 'bg-emerald-500' : 'bg-amber-500'}`}></span>
+              </span>
+              <p className="text-[10px] font-bold uppercase tracking-[0.2em] text-teal-600">
+                Video Consultation
+              </p>
+            </div>
+            <h2 className="mt-1.5 text-2xl font-extrabold tracking-tight text-stone-900">
+              {remoteLabel}
+            </h2>
+          </div>
+          
+          <div className="flex flex-col items-end">
+            <span className={`inline-flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-bold uppercase tracking-wider transition-colors ${isConnected ? 'bg-emerald-50 text-emerald-700 border border-emerald-100' : 'bg-amber-50 text-amber-700 border border-amber-100'}`}>
+              {isConnected ? 'Session Active' : 'Connecting...'}
+            </span>
+            <p className="mt-1.5 text-[10px] font-medium text-stone-400 uppercase tracking-widest text-right">
+              Room • {activeRoomNameRef.current || roomName}
+            </p>
+          </div>
+        </div>
+
+        {/* Video Area - Immersive layout */}
+        <div className="p-5 lg:p-6 flex-1 flex flex-col min-h-0 bg-stone-50/50">
+          <div className={`relative w-full max-w-[900px] mx-auto h-[550px] overflow-hidden rounded-[2rem] shadow-inner group ring-1 ring-stone-900/10 ${videoBgTone}`}>
+            {/* Remote Video Stream */}
+            <div className="absolute inset-0">
+              <video
+                ref={remoteVideoRef}
+                className={`h-full w-full object-cover transition-opacity duration-700 ${remoteConnected ? 'opacity-100' : 'opacity-0'}`}
+                autoPlay
+                playsInline
+              />
+              {!remoteConnected && (
+                <div className="flex h-full items-center justify-center bg-[radial-gradient(circle_at_center,_rgba(255,255,255,0.04),_transparent_60%)]">
+                  <div className="text-center transform transition-transform hover:scale-105 duration-500">
+                    <div className="mx-auto flex h-24 w-24 items-center justify-center rounded-2xl bg-stone-800/60 shadow-2xl backdrop-blur-xl border border-stone-700/50 text-5xl text-stone-300 font-light">
+                      {(remoteLabel || 'R').charAt(0).toUpperCase()}
+                    </div>
+                    <p className="mt-4 text-xs font-medium tracking-wide text-stone-400">
+                      {remoteStatus}
+                    </p>
+                  </div>
+                </div>
+              )}
+            </div>
+
+            {/* Local Video Stream (PIP) */}
+            <div className="absolute top-6 right-6 z-10 w-36 h-52 overflow-hidden rounded-2xl border border-white/10 bg-stone-900 shadow-2xl transition-transform hover:scale-[1.02] duration-300 ease-out">
+              <video
+                ref={localVideoRef}
+                className={`h-full w-full object-cover ${cameraEnabled ? '' : 'hidden'}`}
+                autoPlay
+                playsInline
+                muted
+              />
+              {!cameraEnabled && (
+                <div className="flex h-full items-center justify-center bg-stone-900 text-stone-600">
+                  <CameraOff size={24} strokeWidth={1.5} />
+                </div>
+              )}
+              <div className="absolute bottom-3 left-3 right-3 text-center rounded-xl bg-black/50 py-1.5 text-[10px] font-semibold tracking-wide text-white/90 backdrop-blur-md border border-white/5 truncate px-1">
+                {participant.userName} (You)
+              </div>
+            </div>
+
+            {/* Overlays */}
+            {joiningCall && (
+              <div className="absolute inset-0 z-20 flex items-center justify-center bg-stone-900/40 backdrop-blur-sm">
+                <div className="flex items-center gap-3 rounded-2xl bg-white/10 px-6 py-4 text-sm font-semibold text-white/90 backdrop-blur-xl border border-white/10 shadow-2xl">
+                  <LoaderCircle size={20} className="animate-spin text-teal-400" />
+                  Preparing secure session...
+                </div>
+              </div>
+            )}
+
+            {callError && (
+              <div className="absolute top-6 left-1/2 -translate-x-1/2 z-20 rounded-2xl border border-rose-500/30 bg-rose-500/20 px-6 py-3 text-sm font-medium text-rose-100 backdrop-blur-xl shadow-lg flex items-center gap-3">
+                <span className="w-2 h-2 rounded-full bg-rose-400 animate-pulse" />
+                {callError}
+              </div>
+            )}
+
+            {/* Floating Control Bar */}
+            <div className="absolute bottom-6 left-1/2 -translate-x-1/2 z-30 flex items-center gap-2.5">
+              <button
+                type="button"
+                onClick={toggleMicrophone}
+                className={`inline-flex h-10 w-10 items-center justify-center rounded-[0.8rem] transition-all duration-300 ${micEnabled ? patientControlTone + ' shadow-lg border border-white/20 backdrop-blur-md' : 'bg-rose-500 text-white hover:bg-rose-600 shadow-rose-500/25 shadow-lg'}`}
+                title={micEnabled ? "Mute Microphone" : "Unmute Microphone"}
+              >
+                {micEnabled ? <Mic size={16} strokeWidth={2} /> : <MicOff size={16} strokeWidth={2} />}
+              </button>
+              <button
+                type="button"
+                onClick={toggleCamera}
+                className={`inline-flex h-10 w-10 items-center justify-center rounded-[0.8rem] transition-all duration-300 ${cameraEnabled ? patientControlTone + ' shadow-lg border border-white/20 backdrop-blur-md' : 'bg-rose-500 text-white hover:bg-rose-600 shadow-rose-500/25 shadow-lg'}`}
+                title={cameraEnabled ? "Turn off Camera" : "Turn on Camera"}
+              >
+                {cameraEnabled ? <Camera size={16} strokeWidth={2} /> : <CameraOff size={16} strokeWidth={2} />}
+              </button>
+              <button
+                type="button"
+                onClick={onLeave}
+                className={`inline-flex h-10 items-center gap-2 rounded-[0.8rem] px-4 font-bold uppercase tracking-wider text-[10px] bg-rose-500/90 text-white hover:bg-rose-500 border border-white/20 backdrop-blur-md shadow-lg`}
+              >
+                <PhoneOff size={14} strokeWidth={2.5} />
+                End Call
               </button>
             </div>
           </div>

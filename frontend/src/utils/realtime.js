@@ -11,6 +11,13 @@ function resolveRealtimeUrl() {
   }
 
   const apiBaseUrl = (process.env.NEXT_PUBLIC_API_BASE_URL || 'http://localhost:8080/api').trim();
+  
+  if (apiBaseUrl.startsWith('/')) {
+    if (typeof window === 'undefined') return '';
+    const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+    return `${protocol}//${window.location.host}${REALTIME_PATH}`;
+  }
+
   const realtimeBaseUrl = apiBaseUrl
     .replace(/\/api\/?$/, '')
     .replace(/^http:/i, 'ws:')

@@ -47,20 +47,6 @@ function getTodayStart() {
    return start;
 }
 
-function getDoctorDefaultSlots(doctorId) {
-   const doctor = Object.values(DOCTORS)
-      .flat()
-      .find((item) => Number(item.id) === Number(doctorId));
-   return doctor?.availableSlots || [];
-}
-
-function buildDoctorSlotRef(doctorId, doctorName) {
-   return {
-      id: doctorId,
-      name: doctorName
-   };
-}
-
 function mergeAppointmentById(currentAppointments, incomingAppointment) {
    if (!incomingAppointment?.id) {
       return currentAppointments;
@@ -95,6 +81,7 @@ export default function DoctorDashboard() {
    const [slotTimeValue, setSlotTimeValue] = useState('');
    const [slotNotice, setSlotNotice] = useState('');
    const [doctorSlots, setDoctorSlots] = useState([]);
+   const [isSavingSlots, setIsSavingSlots] = useState(false);
 
    const doctorId = resolveBookingDoctorId(user);
    const displayName = (user?.name || 'Doctor').trim() || 'Doctor';
@@ -111,11 +98,11 @@ export default function DoctorDashboard() {
          try {
             const slotMap = await fetchDoctorSlotsByIds([doctorId]);
             if (!cancelled) {
-               setDoctorSlots(mergeDoctorSlots(slotMap[doctorId] || [], getDoctorDefaultSlots(doctorId)));
+               setDoctorSlots(mergeDoctorSlots(slotMap[doctorId] || []));
             }
          } catch {
             if (!cancelled) {
-               setDoctorSlots(mergeDoctorSlots([], getDoctorDefaultSlots(doctorId)));
+               setDoctorSlots([]);
             }
          }
       };
@@ -143,7 +130,7 @@ export default function DoctorDashboard() {
          }
 
          setDoctorSlots(
-            mergeDoctorSlots(event?.payload?.slots || [], getDoctorDefaultSlots(doctorId))
+            mergeDoctorSlots(event?.payload?.slots || [])
          );
       });
    }, [doctorId]);
@@ -372,7 +359,16 @@ export default function DoctorDashboard() {
          return;
       }
 
-      const updatedSlots = mergeDoctorSlots([...doctorSlots, formattedSlot], getDoctorDefaultSlots(doctorId));
+      if (doctorSlots.includes(formattedSlot)) {
+         setSlotNotice(`${formattedSlot} is already in your available slots.`);
+         return;
+      }
+
+      const updatedSlots = mergeDoctorSlots([...doctorSlots, formattedSlot]);
+      const previousSlots = doctorSlots;
+      setIsSavingSlots(true);
+      setDoctorSlots(updatedSlots);
+      setSlotNotice('');
 
       try {
          const saved = await saveDoctorSlots({
@@ -380,21 +376,27 @@ export default function DoctorDashboard() {
             doctorName: displayName,
             slots: updatedSlots
          });
-         setDoctorSlots(mergeDoctorSlots(saved.slots || [], getDoctorDefaultSlots(doctorId)));
+         setDoctorSlots(mergeDoctorSlots(saved.slots || []));
          setSlotNotice(`Added ${formattedSlot} to your booking slots.`);
          setSlotTimeValue('');
-         setIsSlotPopupOpen(false);
-      } catch {
-         setSlotNotice('Could not save this slot right now.');
+      } catch (error) {
+         setDoctorSlots(previousSlots);
+         setSlotNotice(error?.response?.data?.message || 'Could not save this slot right now.');
+      } finally {
+         setIsSavingSlots(false);
       }
    };
 
    const handleMarkSlotUnavailable = async (slotToRemove) => {
-      if (!doctorId || !slotToRemove) {
+      if (!doctorId || !slotToRemove || isSavingSlots) {
          return;
       }
 
       const updatedSlots = doctorSlots.filter((slot) => slot !== slotToRemove);
+      const previousSlots = doctorSlots;
+      setIsSavingSlots(true);
+      setDoctorSlots(updatedSlots);
+      setSlotNotice('');
 
       try {
          const saved = await saveDoctorSlots({
@@ -402,10 +404,13 @@ export default function DoctorDashboard() {
             doctorName: displayName,
             slots: updatedSlots
          });
-         setDoctorSlots(mergeDoctorSlots(saved.slots || [], getDoctorDefaultSlots(doctorId)));
+         setDoctorSlots(mergeDoctorSlots(saved.slots || []));
          setSlotNotice(`Marked ${slotToRemove} unavailable.`);
-      } catch {
-         setSlotNotice('Could not update slot availability right now.');
+      } catch (error) {
+         setDoctorSlots(previousSlots);
+         setSlotNotice(error?.response?.data?.message || 'Could not update slot availability right now.');
+      } finally {
+         setIsSavingSlots(false);
       }
    };
 
@@ -549,6 +554,7 @@ export default function DoctorDashboard() {
                                           type="button"
                                           key={`modal-${slot}`}
                                           onClick={() => void handleMarkSlotUnavailable(slot)}
+                                          disabled={isSavingSlots}
                                           className="inline-flex items-center gap-2 rounded-full border border-teal-200 bg-white px-3 py-1 text-[11px] font-bold uppercase tracking-wider text-teal-700 transition hover:border-rose-200 hover:bg-rose-50 hover:text-rose-700"
                                        >
                                           {slot}
@@ -593,11 +599,18 @@ export default function DoctorDashboard() {
                                  <button
                                     type="button"
                                     onClick={handleAddSlot}
-                                    className="shrink-0 rounded-xl bg-stone-900 px-4 py-3 text-xs font-bold uppercase tracking-wider text-white shadow-[0_10px_24px_rgba(15,23,42,0.18)] hover:bg-black"
+                                    disabled={isSavingSlots}
+                                    className="shrink-0 rounded-xl bg-stone-900 px-4 py-3 text-xs font-bold uppercase tracking-wider text-white shadow-[0_10px_24px_rgba(15,23,42,0.18)] hover:bg-black disabled:cursor-not-allowed disabled:opacity-60"
                                  >
-                                    Add Time Slot
+                                    {isSavingSlots ? 'Saving...' : 'Add Time Slot'}
                                  </button>
                               </div>
+
+                              {slotNotice ? (
+                                 <div className="mt-4 rounded-2xl border border-teal-100 bg-teal-50/80 px-4 py-3 text-sm font-semibold text-teal-700">
+                                    {slotNotice}
+                                 </div>
+                              ) : null}
                            </div>
 
                            <div className="mt-5 flex items-center justify-end gap-3">

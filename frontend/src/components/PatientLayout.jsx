@@ -4,7 +4,7 @@ import { useEffect } from 'react';
 import { useAuth } from '../features/auth/hooks/useAuth';
 import PatientSidebar from './PatientSidebar';
 
-export default function PatientLayout({ children, title, activePage }) {
+export default function PatientLayout({ children, title, activePage, hideSidebar = false }) {
   const router = useRouter();
   const { isAuthenticated, isAuthReady, user } = useAuth();
 
@@ -37,7 +37,7 @@ export default function PatientLayout({ children, title, activePage }) {
         <title>{`${title} | MediConnect`}</title>
       </Head>
 
-      <PatientSidebar activePage={activePage} />
+      {!hideSidebar && <PatientSidebar activePage={activePage} />}
 
       {/* Main Content Area */}
       {children}

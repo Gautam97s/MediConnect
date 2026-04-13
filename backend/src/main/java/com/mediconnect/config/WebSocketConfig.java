@@ -19,11 +19,6 @@ public class WebSocketConfig implements WebSocketConfigurer {
     @Override
     public void registerWebSocketHandlers(WebSocketHandlerRegistry registry) {
         registry.addHandler(realtimeWebSocketHandler, "/ws/updates")
-                .setAllowedOrigins(
-                        "http://localhost:3000",
-                        "http://127.0.0.1:3000",
-                        "http://localhost:3001",
-                        "http://127.0.0.1:3001"
-                );
+                .setAllowedOriginPatterns("*");
     }
 }

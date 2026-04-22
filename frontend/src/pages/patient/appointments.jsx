@@ -23,6 +23,8 @@ import {
   deleteAppointment 
 } from '../../features/appointments/api/appointmentApi';
 
+const UPCOMING_GRACE_PERIOD_MS = 3 * 60 * 1000;
+
 function parseSlotToDate(timeSlot) {
   const now = new Date();
   const date = new Date(now);
@@ -124,6 +126,10 @@ function mergeAppointmentById(currentAppointments, incomingAppointment) {
   return currentAppointments.map((appointment) =>
     appointment.id === incomingAppointment.id ? incomingAppointment : appointment
   );
+}
+
+function removeAppointmentById(currentAppointments, appointmentId) {
+  return currentAppointments.filter((appointment) => appointment.id !== appointmentId);
 }
 
 function BookingWizard({ onCancel, onProceedToPayment }) {
@@ -410,7 +416,18 @@ export default function Appointments() {
   const [cancelingIds, setCancelingIds] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
+  const [nowEpochMs, setNowEpochMs] = useState(Date.now());
   const patientDisplayName = user?.name?.trim() || '';
+
+  useEffect(() => {
+    const intervalId = window.setInterval(() => {
+      setNowEpochMs(Date.now());
+    }, 30000);
+
+    return () => {
+      window.clearInterval(intervalId);
+    };
+  }, []);
 
   const doctorMap = useMemo(() => {
     return Object.entries(DOCTORS).reduce((acc, [categoryId, doctors]) => {
@@ -463,6 +480,11 @@ export default function Appointments() {
         return;
       }
 
+      if (type === 'appointment.deleted') {
+        setAppointments((current) => removeAppointmentById(current, payload?.id));
+        return;
+      }
+
       setAppointments((current) => mergeAppointmentById(current, payload));
     });
   }, [patientDisplayName]);
@@ -491,11 +513,28 @@ export default function Appointments() {
   };
 
   const upcoming = appointments
-    .filter((item) => item.status === 'SCHEDULED')
+    .filter((item) => {
+      const status = (item?.status || '').toString().toUpperCase();
+      const appointmentMs = new Date(item?.appointmentDate).getTime();
+      return (
+        status === 'SCHEDULED' &&
+        !Number.isNaN(appointmentMs) &&
+        appointmentMs + UPCOMING_GRACE_PERIOD_MS > nowEpochMs
+      );
+    })
     .sort((a, b) => new Date(a.appointmentDate) - new Date(b.appointmentDate));
 
   const history = appointments
-    .filter((item) => item.status !== 'SCHEDULED')
+    .filter((item) => {
+      const status = (item?.status || '').toString().toUpperCase();
+      const appointmentMs = new Date(item?.appointmentDate).getTime();
+
+      if (status !== 'SCHEDULED') {
+        return true;
+      }
+
+      return !Number.isNaN(appointmentMs) && appointmentMs + UPCOMING_GRACE_PERIOD_MS <= nowEpochMs;
+    })
     .sort((a, b) => new Date(b.appointmentDate) - new Date(a.appointmentDate));
 
   const visible = activeTab === 'upcoming' ? upcoming : history;

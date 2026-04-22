@@ -4,6 +4,7 @@ import com.mediconnect.appointment.model.Appointment;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.mediconnect.doctorslots.model.DoctorAvailabilityResponse;
+import com.mediconnect.message.model.Message;
 import org.springframework.stereotype.Service;
 
 import java.time.Instant;
@@ -36,8 +37,16 @@ public class RealtimeEventPublisher {
         publish("appointment.cancelled", appointment);
     }
 
+    public void publishAppointmentDeleted(Appointment appointment) {
+        publish("appointment.deleted", appointment);
+    }
+
     public void publishAppointmentsCleared() {
         publish("appointment.cleared", Map.of("scope", "all"));
+    }
+
+    public void publishMessageCreated(Message message) {
+        publish("message.created", message);
     }
 
     private void publish(String type, Object payload) {

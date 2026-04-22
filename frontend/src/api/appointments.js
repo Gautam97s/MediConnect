@@ -29,6 +29,13 @@ export async function cancelAppointment(id) {
   return response.data;
 }
 
+export async function deleteDoctorPatientAppointments(doctorId, patientName) {
+  const response = await client.delete(`/appointments/doctor/${doctorId}/patient`, {
+    params: { patientName }
+  });
+  return response.data;
+}
+
 export async function updateAppointment(id, payload) {
   const response = await client.put(`/appointments/${id}`, payload);
   return response.data;

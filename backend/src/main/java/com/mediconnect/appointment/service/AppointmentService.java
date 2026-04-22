@@ -16,5 +16,7 @@ public interface AppointmentService {
 
     Appointment cancelAppointment(Long id);
 
+    int deleteAppointmentsForDoctorPatient(Long doctorId, String patientName);
+
     void clearAllAndReset();
 }

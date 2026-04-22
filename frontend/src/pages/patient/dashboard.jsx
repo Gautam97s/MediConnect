@@ -20,6 +20,10 @@ import {
   User
 } from 'lucide-react';
 
+const UPCOMING_GRACE_PERIOD_MS = 3 * 60 * 1000;
+const PATIENT_JOIN_EARLY_WINDOW_MS = 5 * 60 * 1000;
+const SESSION_JOIN_LATE_WINDOW_MS = 5 * 60 * 1000;
+
 function normalizeName(value) {
   return (value || '')
     .toString()
@@ -57,6 +61,10 @@ function mergeAppointmentById(currentAppointments, incomingAppointment) {
   return currentAppointments.map((appointment) =>
     appointment.id === incomingAppointment.id ? incomingAppointment : appointment
   );
+}
+
+function removeAppointmentById(currentAppointments, appointmentId) {
+  return currentAppointments.filter((appointment) => appointment.id !== appointmentId);
 }
 
 export default function PatientDashboard() {
@@ -142,6 +150,11 @@ export default function PatientDashboard() {
         return;
       }
 
+      if (type === 'appointment.deleted') {
+        setAppointments((current) => removeAppointmentById(current, payload?.id));
+        return;
+      }
+
       setAppointments((current) => mergeAppointmentById(current, payload));
     });
   }, [displayName]);
@@ -160,7 +173,13 @@ export default function PatientDashboard() {
       .filter((appointment) => {
         const status = (appointment?.status || 'SCHEDULED').toString().toUpperCase();
         const dateValue = new Date(appointment?.appointmentDate).getTime();
-        return dateValue > nowEpochMs && status !== 'CANCELLED' && status !== 'COMPLETED' && status !== 'NO_SHOW';
+        return (
+          !Number.isNaN(dateValue) &&
+          dateValue + UPCOMING_GRACE_PERIOD_MS > nowEpochMs &&
+          status !== 'CANCELLED' &&
+          status !== 'COMPLETED' &&
+          status !== 'NO_SHOW'
+        );
       })
       .sort((a, b) => new Date(a.appointmentDate) - new Date(b.appointmentDate))[0] || null;
   }, [appointments, nowEpochMs]);
@@ -214,8 +233,9 @@ export default function PatientDashboard() {
       return false;
     }
 
-    const openJoinAtMs = appointmentMs - 5 * 60 * 1000;
-    return nowEpochMs >= openJoinAtMs;
+    const openJoinAtMs = appointmentMs - PATIENT_JOIN_EARLY_WINDOW_MS;
+    const closeJoinAtMs = appointmentMs + SESSION_JOIN_LATE_WINDOW_MS;
+    return nowEpochMs >= openJoinAtMs && nowEpochMs <= closeJoinAtMs;
   }, [upcomingConsultation, nowEpochMs]);
 
   const joinAvailabilityLabel = useMemo(() => {
@@ -229,13 +249,23 @@ export default function PatientDashboard() {
     }
 
     const openJoinAtMs = appointmentMs - 5 * 60 * 1000;
-    const remainingMs = openJoinAtMs - nowEpochMs;
-    if (remainingMs <= 0) {
-      return '';
+    const closeJoinAtMs = appointmentMs + SESSION_JOIN_LATE_WINDOW_MS;
+
+    if (nowEpochMs < openJoinAtMs) {
+      const remainingMs = openJoinAtMs - nowEpochMs;
+      if (remainingMs <= 0) {
+        return '';
+      }
+
+      const remainingMinutes = Math.ceil(remainingMs / 60000);
+      return `Join available in ${remainingMinutes} min`;
     }
 
-    const remainingMinutes = Math.ceil(remainingMs / 60000);
-    return `Join available in ${remainingMinutes} min`;
+    if (nowEpochMs > closeJoinAtMs) {
+      return 'Join window has closed for this session.';
+    }
+
+    return '';
   }, [upcomingConsultation, canJoinUpcomingConsultation, nowEpochMs]);
 
   return (

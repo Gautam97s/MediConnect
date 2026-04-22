@@ -18,7 +18,24 @@ function resolveRealtimeUrl() {
     return `${protocol}//${window.location.host}${REALTIME_PATH}`;
   }
 
-  const realtimeBaseUrl = apiBaseUrl
+  let adjustedApiBaseUrl = apiBaseUrl;
+
+  if (typeof window !== 'undefined') {
+    try {
+      const parsedUrl = new URL(apiBaseUrl);
+      const isLoopbackHost = ['localhost', '127.0.0.1'].includes(parsedUrl.hostname);
+      const isRemoteBrowser = !['localhost', '127.0.0.1'].includes(window.location.hostname);
+
+      if (isLoopbackHost && isRemoteBrowser) {
+        parsedUrl.hostname = window.location.hostname;
+        adjustedApiBaseUrl = parsedUrl.toString();
+      }
+    } catch {
+      adjustedApiBaseUrl = apiBaseUrl;
+    }
+  }
+
+  const realtimeBaseUrl = adjustedApiBaseUrl
     .replace(/\/api\/?$/, '')
     .replace(/^http:/i, 'ws:')
     .replace(/^https:/i, 'wss:');

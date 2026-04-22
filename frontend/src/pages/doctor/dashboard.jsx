@@ -15,6 +15,9 @@ import {
   X
 } from 'lucide-react';
 
+const DOCTOR_JOIN_EARLY_WINDOW_MS = 10 * 60 * 1000;
+const SESSION_JOIN_LATE_WINDOW_MS = 5 * 60 * 1000;
+
 function resolveBookingDoctorId(user) {
    const name = (user?.name || '').trim().toLowerCase();
 
@@ -41,6 +44,21 @@ function formatTimeLabel(value) {
    });
 }
 
+function getDisplayStatus(status, appointmentDate) {
+   const normalizedStatus = (status || '').toString().toUpperCase() || 'SCHEDULED';
+   const appointmentMs = new Date(appointmentDate).getTime();
+
+   if (
+      normalizedStatus === 'SCHEDULED' &&
+      !Number.isNaN(appointmentMs) &&
+      appointmentMs < Date.now()
+   ) {
+      return 'PENDING REVIEW';
+   }
+
+   return normalizedStatus;
+}
+
 function getTodayStart() {
    const start = new Date();
    start.setHours(0, 0, 0, 0);
@@ -63,6 +81,10 @@ function mergeAppointmentById(currentAppointments, incomingAppointment) {
    return currentAppointments.map((appointment) =>
       appointment.id === incomingAppointment.id ? incomingAppointment : appointment
    );
+}
+
+function removeAppointmentById(currentAppointments, appointmentId) {
+   return currentAppointments.filter((appointment) => appointment.id !== appointmentId);
 }
 
 export default function DoctorDashboard() {
@@ -157,6 +179,11 @@ export default function DoctorDashboard() {
             return;
          }
 
+         if (type === 'appointment.deleted') {
+            setAppointments((current) => removeAppointmentById(current, payload?.id));
+            return;
+         }
+
          setAppointments((current) => mergeAppointmentById(current, payload));
       });
    }, [doctorId]);
@@ -218,7 +245,7 @@ export default function DoctorDashboard() {
                time: formatTimeLabel(appointment.appointmentDate),
                name: appointment.patientName || 'Patient',
                type: appointment.reason || 'Consultation',
-               status: isWaiting ? 'WAITING' : 'UPCOMING',
+               status: isWaiting ? 'WAITING' : getDisplayStatus(appointment.status, appointment.appointmentDate),
                color: statusColor
             };
          });
@@ -332,8 +359,9 @@ export default function DoctorDashboard() {
          return false;
       }
 
-      const diffMs = appointmentMs - Date.now();
-      return diffMs <= 10 * 60 * 1000;
+      const nowMs = Date.now();
+      return nowMs >= appointmentMs - DOCTOR_JOIN_EARLY_WINDOW_MS
+         && nowMs <= appointmentMs + SESSION_JOIN_LATE_WINDOW_MS;
    }, [activeConsultation]);
 
    const openAvailabilityPopup = (nextAccepting) => {
@@ -721,7 +749,7 @@ export default function DoctorDashboard() {
                            <p className="text-sm text-stone-500">
                               {canJoinActiveConsultation
                                  ? 'Your consultation room is ready to join.'
-                                 : 'Session access opens 10 minutes before the scheduled time.'}
+                                 : 'Session access opens 10 minutes before and stays open for 5 minutes after the scheduled time.'}
                            </p>
                            <button
                               type="button"

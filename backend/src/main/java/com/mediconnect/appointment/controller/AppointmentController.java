@@ -47,6 +47,14 @@ public class AppointmentController {
         return appointmentService.cancelAppointment(id);
     }
 
+    @DeleteMapping("/doctor/{doctorId}/patient")
+    public int deleteDoctorPatientAppointments(
+            @PathVariable Long doctorId,
+            @RequestParam String patientName
+    ) {
+        return appointmentService.deleteAppointmentsForDoctorPatient(doctorId, patientName);
+    }
+
     @DeleteMapping("/all")
     @ResponseStatus(HttpStatus.NO_CONTENT)
     public void clearAllAppointments() {

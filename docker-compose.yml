@@ -1,19 +1,27 @@
 version: '3.8'
 
 services:
+
+  # ─── PostgreSQL ────────────────────────────────────────────────────────────
   db:
     image: postgres:15-alpine
     container_name: mediconnect-db
     restart: always
     environment:
-      POSTGRES_USER: myuser
-      POSTGRES_PASSWORD: mypassword
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: GautamSh@2005
       POSTGRES_DB: mediconnect
     ports:
       - "5432:5432"
     volumes:
       - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d mediconnect"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
 
+  # ─── Redis ─────────────────────────────────────────────────────────────────
   redis:
     image: redis:7-alpine
     container_name: mediconnect-redis
@@ -22,7 +30,71 @@ services:
       - "6379:6379"
     volumes:
       - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # ─── Spring Boot Backend ───────────────────────────────────────────────────
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: mediconnect-backend
+    restart: always
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    ports:
+      - "8080:8080"
+    environment:
+      # Database (local containerised Postgres)
+      DATABASE_URL: jdbc:postgresql://db:5432/mediconnect
+      DATABASE_USERNAME: postgres
+      DATABASE_PASSWORD: GautamSh@2005
+
+      # Redis (local containerised Redis)
+      REDIS_HOST: redis
+      REDIS_PORT: 6379
+      REDIS_USERNAME: default
+      REDIS_PASSWORD: ""
+      REDIS_SSL: "false"
+
+      # JWT
+      JWT_SECRET: 404E635266556A586E3272357538782F413F4428472B4B6250645367566B5970
+      AUTH_REFRESH_EXPIRATION_MS: 518400000
+
+      # ZegoCloud
+      ZEGO_APP_ID: 1697694344
+      ZEGO_SERVER_SECRET: 03dc518a06062298272fc6b6cd2b296f
+      ZEGO_SERVER_URL: wss://webliveroom1697694344-api.coolzcloud.com/ws
+    volumes:
+      - backend_logs:/app/logs
+
+  # ─── Next.js Frontend ──────────────────────────────────────────────────────
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    container_name: mediconnect-frontend
+    restart: always
+    depends_on:
+      - backend
+    ports:
+      - "3000:3000"
+    environment:
+      # Backend API base URL (resolved inside the Docker network)
+      NEXT_PUBLIC_API_URL: http://backend:8080
+
+      # ZegoCloud
+      NEXT_PUBLIC_ZEGO_APP_ID: 1697694344
+      NEXT_PUBLIC_ZEGO_SERVER_SECRET: 03dc518a06062298272fc6b6cd2b296f
+      NEXT_PUBLIC_ZEGO_SERVER_URL: wss://webliveroom1697694344-api.coolzcloud.com/ws
 
 volumes:
   postgres_data:
   redis_data:
+  backend_logs:

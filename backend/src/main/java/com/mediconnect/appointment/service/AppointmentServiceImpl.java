@@ -95,6 +95,31 @@ public class AppointmentServiceImpl implements AppointmentService {
 
     @Override
     @Transactional
+    public int deleteAppointmentsForDoctorPatient(Long doctorId, String patientName) {
+        if (doctorId == null || doctorId <= 0) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Doctor id is required");
+        }
+
+        if (!StringUtils.hasText(patientName)) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Patient name is required");
+        }
+
+        List<Appointment> matchingAppointments = appointmentRepository.findByDoctorIdAndPatientNameIgnoreCase(
+                doctorId,
+                patientName.trim()
+        );
+
+        if (matchingAppointments.isEmpty()) {
+            return 0;
+        }
+
+        appointmentRepository.deleteAllInBatch(matchingAppointments);
+        matchingAppointments.forEach(realtimeEventPublisher::publishAppointmentDeleted);
+        return matchingAppointments.size();
+    }
+
+    @Override
+    @Transactional
     public void clearAllAndReset() {
         appointmentRepository.truncateAndResetId();
         realtimeEventPublisher.publishAppointmentsCleared();

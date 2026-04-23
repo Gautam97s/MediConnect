@@ -62,6 +62,12 @@ export const resetPasswordRequest = async (payload) => {
   ]);
 };
 
+export const verify2faRequest = async (payload) => {
+  return postWithFallback(payload, [
+    '/auth/verify-2fa'
+  ]);
+};
+
 export const refreshTokenRequest = async (payload) => {
   return postWithFallback(payload, [
     '/auth/refresh'

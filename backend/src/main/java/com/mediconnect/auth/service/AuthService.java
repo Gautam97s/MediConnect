@@ -12,6 +12,7 @@ import com.mediconnect.auth.model.PasswordResetToken;
 import com.mediconnect.auth.model.RefreshTokenRequest;
 import com.mediconnect.auth.model.RegisterRequest;
 import com.mediconnect.auth.model.ResetPasswordRequest;
+import com.mediconnect.auth.model.TwoFactorVerifyRequest;
 import com.mediconnect.auth.model.UserRole;
 import com.mediconnect.auth.repository.AuthUserRepository;
 import com.mediconnect.auth.repository.DoctorProfileRepository;
@@ -30,6 +31,7 @@ import java.time.Duration;
 import java.time.LocalDateTime;
 import java.util.Map;
 import java.util.Objects;
+import java.security.SecureRandom;
 import java.util.UUID;
 
 @Service
@@ -42,6 +44,10 @@ public class AuthService {
     private final StringRedisTemplate redisTemplate;
     private final PasswordEncoder passwordEncoder;
     private final JwtService jwtService;
+    private final SecureRandom secureRandom = new SecureRandom();
+
+    private static final Duration TWO_FACTOR_TTL = Duration.ofMinutes(5);
+    private static final String TWO_FACTOR_PREFIX = "2fa:";
 
     @Value("${auth.refresh.expiration-ms}")
     private long refreshExpirationMs;
@@ -109,7 +115,7 @@ public class AuthService {
         return toAuthResponse(saved, token, refreshToken);
     }
 
-    public AuthResponse login(LoginRequest request) {
+    public Map<String, Object> login(LoginRequest request) {
         AuthUser user = authUserRepository.findByEmail(request.getEmail().trim().toLowerCase())
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.UNAUTHORIZED, "Invalid email or password"));
 
@@ -121,6 +127,38 @@ public class AuthService {
         if (requestedRole != user.getRole()) {
             throw new ResponseStatusException(HttpStatus.FORBIDDEN, "Selected role does not match your account");
         }
+
+        String otp = generateTwoFactorOtp();
+        storeTwoFactorOtp(user.getId(), otp);
+
+        return Map.of(
+                "requires2fa", true,
+                "twoFactorToken", otp,
+                "userId", user.getId()
+        );
+    }
+
+    public AuthResponse verify2fa(TwoFactorVerifyRequest request) {
+        AuthUser user = authUserRepository.findById(request.getUserId())
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.UNAUTHORIZED, "2FA session is invalid or expired"));
+
+        UserRole requestedRole = parseRole(request.getRole());
+        if (requestedRole != user.getRole()) {
+            throw new ResponseStatusException(HttpStatus.FORBIDDEN, "Selected role does not match your account");
+        }
+
+        String key = getTwoFactorKey(user.getId());
+        String storedOtp = getTwoFactorOtp(key);
+        if (storedOtp == null || storedOtp.isBlank()) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "OTP expired");
+        }
+
+        String providedOtp = request.getOtp() == null ? "" : request.getOtp().trim();
+        if (!storedOtp.equals(providedOtp)) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Invalid OTP");
+        }
+
+        deleteTwoFactorOtp(key);
 
         String accessToken = jwtService.generateToken(user);
         String refreshToken = issueRefreshToken(user);
@@ -317,6 +355,47 @@ public class AuthService {
                     "Redis session store unavailable. Configure REDIS env keys and ensure Redis is reachable."
             );
         }
+    }
+
+    private String generateTwoFactorOtp() {
+        return String.format("%06d", secureRandom.nextInt(1_000_000));
+    }
+
+    private void storeTwoFactorOtp(Long userId, String otp) {
+        try {
+            redisTemplate.opsForValue().set(getTwoFactorKey(userId), otp, TWO_FACTOR_TTL);
+        } catch (RedisConnectionFailureException ex) {
+            throw new ResponseStatusException(
+                    HttpStatus.SERVICE_UNAVAILABLE,
+                    "Redis 2FA store unavailable. Configure REDIS env keys and ensure Redis is reachable."
+            );
+        }
+    }
+
+    private String getTwoFactorOtp(String key) {
+        try {
+            return redisTemplate.opsForValue().get(key);
+        } catch (RedisConnectionFailureException ex) {
+            throw new ResponseStatusException(
+                    HttpStatus.SERVICE_UNAVAILABLE,
+                    "Redis 2FA store unavailable. Configure REDIS env keys and ensure Redis is reachable."
+            );
+        }
+    }
+
+    private void deleteTwoFactorOtp(String key) {
+        try {
+            redisTemplate.delete(key);
+        } catch (RedisConnectionFailureException ex) {
+            throw new ResponseStatusException(
+                    HttpStatus.SERVICE_UNAVAILABLE,
+                    "Redis 2FA store unavailable. Configure REDIS env keys and ensure Redis is reachable."
+            );
+        }
+    }
+
+    private String getTwoFactorKey(Long userId) {
+        return TWO_FACTOR_PREFIX + userId;
     }
 
 }

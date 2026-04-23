@@ -7,6 +7,7 @@ import com.mediconnect.auth.model.LogoutRequest;
 import com.mediconnect.auth.model.RefreshTokenRequest;
 import com.mediconnect.auth.model.RegisterRequest;
 import com.mediconnect.auth.model.ResetPasswordRequest;
+import com.mediconnect.auth.model.TwoFactorVerifyRequest;
 import com.mediconnect.auth.service.AuthService;
 import jakarta.validation.Valid;
 import org.springframework.http.HttpStatus;
@@ -35,8 +36,13 @@ public class AuthController {
     }
 
     @PostMapping({"/login", "/signin"})
-    public AuthResponse login(@Valid @RequestBody LoginRequest request) {
+    public Map<String, Object> login(@Valid @RequestBody LoginRequest request) {
         return authService.login(request);
+    }
+
+    @PostMapping("/verify-2fa")
+    public AuthResponse verify2fa(@Valid @RequestBody TwoFactorVerifyRequest request) {
+        return authService.verify2fa(request);
     }
 
     @PostMapping({"/forgot-password", "/forgot"})

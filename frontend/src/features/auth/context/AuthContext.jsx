@@ -4,6 +4,7 @@ import {
   registerRequest,
   forgotPasswordRequest,
   resetPasswordRequest,
+  verify2faRequest,
   refreshTokenRequest
 } from '../api/authApi';
 
@@ -242,6 +243,11 @@ export function AuthProvider({ children }) {
     setLoading(true);
     try {
       const data = await loginRequest({ email, password, role });
+
+      if (data?.requires2fa) {
+        return data;
+      }
+
       const nextToken = extractToken(data);
       const nextRefreshToken = extractRefreshToken(data);
       const nextUser = extractUser(data, { email, role });
@@ -250,6 +256,27 @@ export function AuthProvider({ children }) {
 
       if (!nextToken) {
         throw new Error('Login succeeded but token is missing from API response.');
+      }
+
+      persistSession(nextToken, nextUser, expiresAtEpochMs, nextRefreshToken, refreshExpiresAtEpochMs);
+      return nextUser;
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const verify2fa = async ({ userId, twoFactorToken, otp, role }) => {
+    setLoading(true);
+    try {
+      const data = await verify2faRequest({ userId, twoFactorToken, otp, role });
+      const nextToken = extractToken(data);
+      const nextRefreshToken = extractRefreshToken(data);
+      const nextUser = extractUser(data, { id: userId, role });
+      const expiresAtEpochMs = extractExpiresAtEpochMs(data);
+      const refreshExpiresAtEpochMs = extractRefreshExpiresAtEpochMs(data);
+
+      if (!nextToken) {
+        throw new Error('OTP verification succeeded but token is missing from API response.');
       }
 
       persistSession(nextToken, nextUser, expiresAtEpochMs, nextRefreshToken, refreshExpiresAtEpochMs);
@@ -320,6 +347,7 @@ export function AuthProvider({ children }) {
       isAuthReady,
       isAuthenticated: Boolean(token),
       login,
+      verify2fa,
       register,
       updateUserProfile,
       forgotPassword,

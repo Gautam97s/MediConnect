@@ -106,8 +106,10 @@ public class PrescriptionServiceImpl implements PrescriptionService {
         AuthUser user = resolveCurrentUser(authorizationHeader);
 
         if (appointmentId != null && appointmentId > 0) {
-            Prescription prescription = prescriptionRepository.findByAppointmentId(appointmentId)
-                    .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Prescription not found"));
+            Prescription prescription = prescriptionRepository.findByAppointmentId(appointmentId).orElse(null);
+            if (prescription == null) {
+                return List.of();
+            }
             validatePrescriptionAccess(user, prescription);
             return List.of(toResponse(prescription));
         }

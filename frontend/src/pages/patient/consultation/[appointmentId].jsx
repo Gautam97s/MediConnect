@@ -47,6 +47,29 @@ export default function PatientConsultationPage() {
   const [prescriptionNotice, setPrescriptionNotice] = useState('');
   const [downloadingPdf, setDownloadingPdf] = useState(false);
 
+  const loadPrescription = async (targetAppointmentId) => {
+    if (!targetAppointmentId) {
+      return null;
+    }
+
+    try {
+      const prescriptions = await fetchPrescriptions({ appointmentId: targetAppointmentId });
+      const nextPrescription = Array.isArray(prescriptions) ? prescriptions[0] || null : null;
+      setPrescription(nextPrescription);
+      if (nextPrescription) {
+        setPrescriptionNotice('Your prescription PDF is ready to download.');
+      }
+      return nextPrescription;
+    } catch (requestError) {
+      if (requestError?.response?.status === 404) {
+        setPrescription(null);
+        return null;
+      }
+
+      throw requestError;
+    }
+  };
+
   useEffect(() => {
     if (!appointmentId) {
       return;
@@ -59,17 +82,11 @@ export default function PatientConsultationPage() {
       setError('');
 
       try {
-        const [appointmentData, prescriptions] = await Promise.all([
-          fetchAppointmentById(appointmentId),
-          fetchPrescriptions({ appointmentId })
-        ]);
+        const appointmentData = await fetchAppointmentById(appointmentId);
 
         if (!cancelled) {
           setAppointment(appointmentData);
-          setPrescription(Array.isArray(prescriptions) ? prescriptions[0] || null : null);
-          if (Array.isArray(prescriptions) && prescriptions[0]) {
-            setPrescriptionNotice('Your prescription PDF is ready to download.');
-          }
+          await loadPrescription(appointmentId);
         }
       } catch {
         if (!cancelled) {
@@ -104,9 +121,26 @@ export default function PatientConsultationPage() {
 
       if (type === 'appointment.updated' && Number(event?.payload?.id) === Number(appointmentId)) {
         setAppointment(event.payload);
+        if ((event?.payload?.status || '').toString().toUpperCase() === 'COMPLETED') {
+          void loadPrescription(appointmentId);
+        }
       }
     });
   }, [appointmentId]);
+
+  useEffect(() => {
+    if (!appointmentId || prescription?.id) {
+      return undefined;
+    }
+
+    const intervalId = window.setInterval(() => {
+      void loadPrescription(appointmentId);
+    }, 5000);
+
+    return () => {
+      window.clearInterval(intervalId);
+    };
+  }, [appointmentId, prescription?.id]);
 
   const sessionSummary = useMemo(
     () => formatSessionDateTime(appointment?.appointmentDate),

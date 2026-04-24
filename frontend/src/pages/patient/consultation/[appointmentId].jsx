@@ -3,16 +3,19 @@ import { useRouter } from 'next/router';
 import PatientLayout from '../../../components/PatientLayout';
 import ConsultationCallPanel from '../../../components/ConsultationCallPanel';
 import { fetchAppointmentById } from '../../../api/appointments';
+import { downloadPrescriptionPdf, fetchPrescriptions, triggerPdfDownload } from '../../../api/prescriptions';
 import { buildConsultationParticipant, buildConsultationRoomName } from '../../../utils/consultationRoom';
+import { subscribeToRealtimeEvents } from '../../../utils/realtime';
 import {
   ArrowLeft,
   Calendar,
   Clock3,
+  Download,
+  FileText,
   MessageSquareText,
   ShieldCheck,
   Stethoscope,
-  UserRound,
-  Video
+  UserRound
 } from 'lucide-react';
 
 function formatSessionDateTime(value) {
@@ -40,6 +43,9 @@ export default function PatientConsultationPage() {
   const [appointment, setAppointment] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
+  const [prescription, setPrescription] = useState(null);
+  const [prescriptionNotice, setPrescriptionNotice] = useState('');
+  const [downloadingPdf, setDownloadingPdf] = useState(false);
 
   useEffect(() => {
     if (!appointmentId) {
@@ -48,14 +54,22 @@ export default function PatientConsultationPage() {
 
     let cancelled = false;
 
-    const loadAppointment = async () => {
+    const loadData = async () => {
       setLoading(true);
       setError('');
 
       try {
-        const appointmentData = await fetchAppointmentById(appointmentId);
+        const [appointmentData, prescriptions] = await Promise.all([
+          fetchAppointmentById(appointmentId),
+          fetchPrescriptions({ appointmentId })
+        ]);
+
         if (!cancelled) {
           setAppointment(appointmentData);
+          setPrescription(Array.isArray(prescriptions) ? prescriptions[0] || null : null);
+          if (Array.isArray(prescriptions) && prescriptions[0]) {
+            setPrescriptionNotice('Your prescription PDF is ready to download.');
+          }
         }
       } catch {
         if (!cancelled) {
@@ -68,17 +82,37 @@ export default function PatientConsultationPage() {
       }
     };
 
-    void loadAppointment();
+    void loadData();
 
     return () => {
       cancelled = true;
     };
   }, [appointmentId]);
 
+  useEffect(() => {
+    if (!appointmentId) {
+      return undefined;
+    }
+
+    return subscribeToRealtimeEvents((event) => {
+      const type = (event?.type || '').toString();
+
+      if (type === 'prescription.ready' && Number(event?.payload?.appointmentId) === Number(appointmentId)) {
+        setPrescription(event.payload);
+        setPrescriptionNotice('Your doctor has completed the consultation and generated your prescription PDF.');
+      }
+
+      if (type === 'appointment.updated' && Number(event?.payload?.id) === Number(appointmentId)) {
+        setAppointment(event.payload);
+      }
+    });
+  }, [appointmentId]);
+
   const sessionSummary = useMemo(
     () => formatSessionDateTime(appointment?.appointmentDate),
     [appointment?.appointmentDate]
   );
+
   const roomName = useMemo(
     () =>
       buildConsultationRoomName({
@@ -89,6 +123,7 @@ export default function PatientConsultationPage() {
       }),
     [appointment?.appointmentDate, appointment?.doctorId, appointment?.patientName, appointmentId]
   );
+
   const participant = useMemo(
     () =>
       buildConsultationParticipant({
@@ -100,6 +135,27 @@ export default function PatientConsultationPage() {
       }),
     [appointment?.doctorId, appointment?.doctorName, appointment?.patientName, appointmentId]
   );
+
+  const handleDownloadPrescription = async () => {
+    if (!prescription?.id) {
+      return;
+    }
+
+    setDownloadingPdf(true);
+    setPrescriptionNotice('');
+
+    try {
+      const { blob, fileName } = await downloadPrescriptionPdf(prescription.id);
+      triggerPdfDownload(blob, fileName);
+      setPrescriptionNotice('Prescription PDF downloaded successfully.');
+    } catch (downloadError) {
+      setPrescriptionNotice(
+        downloadError?.response?.data?.message || 'Could not download the prescription PDF right now.'
+      );
+    } finally {
+      setDownloadingPdf(false);
+    }
+  };
 
   return (
     <PatientLayout title="Consultation" activePage="appointments" hideSidebar={true}>
@@ -133,7 +189,7 @@ export default function PatientConsultationPage() {
             {error}
           </div>
         ) : (
-          <div className="grid grid-cols-1 2xl:grid-cols-[minmax(0,1.85fr)_300px] gap-5">
+          <div className="grid grid-cols-1 2xl:grid-cols-[minmax(0,1.85fr)_320px] gap-5">
             <ConsultationCallPanel
               role="patient"
               appointmentId={appointmentId}
@@ -178,6 +234,58 @@ export default function PatientConsultationPage() {
                     <span className="leading-snug">Use a quiet space with stable internet for the clearest call.</span>
                   </div>
                 </div>
+              </section>
+
+              <section className="rounded-3xl border border-stone-100 bg-gradient-to-br from-teal-50 via-white to-sky-50 p-5 shadow-[0_8px_30px_rgb(0,0,0,0.04)]">
+                <div className="flex items-start justify-between gap-3">
+                  <div>
+                    <p className="text-[10px] font-bold uppercase tracking-[0.22em] text-teal-700">Prescription</p>
+                    <h3 className="mt-1 text-lg font-extrabold tracking-tight text-stone-900">
+                      {prescription ? 'PDF Ready' : 'Waiting for Doctor'}
+                    </h3>
+                  </div>
+                  <FileText size={18} className="text-teal-600" />
+                </div>
+
+                <p className="mt-3 text-sm leading-6 text-stone-600">
+                  {prescription
+                    ? 'Your doctor has finished the consultation. You can download the generated prescription PDF now.'
+                    : 'Once your doctor ends the consultation and finalizes the prescription, it will appear here automatically.'}
+                </p>
+
+                {prescription?.items?.length ? (
+                  <div className="mt-4 space-y-2">
+                    {prescription.items.map((item, index) => (
+                      <div key={`item-${index}`} className="rounded-2xl border border-teal-100 bg-white px-3 py-2.5">
+                        <p className="text-sm font-bold text-stone-900">{item.medicationName}</p>
+                        <p className="mt-1 text-xs text-stone-500">
+                          {item.dosage} • {item.frequency}
+                          {item.duration ? ` • ${item.duration}` : ''}
+                        </p>
+                      </div>
+                    ))}
+                  </div>
+                ) : null}
+
+                {prescriptionNotice ? (
+                  <div className="mt-4 rounded-2xl border border-teal-100 bg-teal-50 px-4 py-3 text-sm font-semibold text-teal-700">
+                    {prescriptionNotice}
+                  </div>
+                ) : null}
+
+                <button
+                  type="button"
+                  onClick={() => void handleDownloadPrescription()}
+                  disabled={!prescription?.id || downloadingPdf}
+                  className={`mt-4 inline-flex w-full items-center justify-center gap-2 rounded-2xl px-4 py-3 text-xs font-bold uppercase tracking-wider transition-colors ${
+                    prescription?.id
+                      ? 'bg-stone-900 text-white hover:bg-black'
+                      : 'cursor-not-allowed border border-stone-200 bg-stone-100 text-stone-400'
+                  }`}
+                >
+                  <Download size={14} />
+                  {downloadingPdf ? 'Downloading...' : 'Download Prescription PDF'}
+                </button>
               </section>
             </aside>
           </div>

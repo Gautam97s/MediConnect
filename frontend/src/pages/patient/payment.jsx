@@ -2,7 +2,7 @@ import React, { useEffect, useMemo, useState } from 'react';
 import { useRouter } from 'next/router';
 import PatientLayout from '../../components/PatientLayout';
 import { useAuth } from '../../features/auth/hooks/useAuth';
-import { ArrowLeft, Calendar, CheckCircle, Clock, CreditCard, ShieldCheck, User } from 'lucide-react';
+import { ArrowLeft, Calendar, CheckCircle, Clock, CreditCard, ShieldCheck, User, Lock, X } from 'lucide-react';
 import { createAppointment } from '../../api/appointments';
 import { CATEGORIES, DOCTORS } from '../../data/bookingData';
 
@@ -42,6 +42,7 @@ export default function PaymentPage() {
   const [isPaying, setIsPaying] = useState(false);
   const [error, setError] = useState('');
   const [isDone, setIsDone] = useState(false);
+  const [showPrivacyPopup, setShowPrivacyPopup] = useState(true);
 
   useEffect(() => {
     if (typeof window === 'undefined') {
@@ -186,6 +187,87 @@ export default function PaymentPage() {
   return (
     <PatientLayout title="Payment" activePage="appointments">
       <main className="flex-1 px-8 py-10 flex flex-col overflow-y-auto">
+        {/* Privacy Disclaimer Popup */}
+        {showPrivacyPopup && (
+          <>
+            <style>{`
+              @keyframes fadeInOverlay {
+                from { opacity: 0; }
+                to { opacity: 1; }
+              }
+              @keyframes slideUp {
+                from { opacity: 0; transform: translateY(30px) scale(0.97); }
+                to { opacity: 1; transform: translateY(0) scale(1); }
+              }
+            `}</style>
+            <div
+              className="fixed inset-0 z-50 flex items-center justify-center px-4"
+              style={{ animation: 'fadeInOverlay 0.3s ease-out' }}
+            >
+              {/* Backdrop */}
+              <div
+                className="absolute inset-0 bg-black/40 backdrop-blur-sm"
+                onClick={() => setShowPrivacyPopup(false)}
+              />
+
+              {/* Modal */}
+              <div
+                className="relative bg-white rounded-2xl shadow-2xl max-w-md w-full p-8 border border-stone-100"
+                style={{ animation: 'slideUp 0.4s ease-out' }}
+              >
+                {/* Close button */}
+                <button
+                  onClick={() => setShowPrivacyPopup(false)}
+                  className="absolute top-4 right-4 p-1.5 rounded-full hover:bg-stone-100 transition-colors text-stone-400 hover:text-stone-600"
+                >
+                  <X size={18} />
+                </button>
+
+                {/* Icon */}
+                <div className="flex justify-center mb-5">
+                  <div className="w-16 h-16 rounded-full bg-gradient-to-br from-teal-500 to-emerald-500 flex items-center justify-center shadow-lg shadow-teal-200">
+                    <Lock size={28} className="text-white" />
+                  </div>
+                </div>
+
+                {/* Title */}
+                <h2 className="text-xl font-extrabold text-stone-900 text-center mb-2">
+                  Your Privacy Matters
+                </h2>
+
+                {/* Description */}
+                <p className="text-stone-500 text-center text-sm leading-relaxed mb-5">
+                  We <span className="font-bold text-stone-700">do not store, save, or retain</span> any of your card details. All payment information is processed securely in real-time and is never saved on our servers.
+                </p>
+
+                {/* Info bullets */}
+                <div className="bg-stone-50 rounded-xl p-4 space-y-3 mb-6">
+                  <div className="flex items-start gap-3">
+                    <ShieldCheck size={18} className="text-teal-600 mt-0.5 flex-shrink-0" />
+                    <span className="text-sm text-stone-600">Card credentials are <span className="font-semibold text-stone-800">never stored</span> in our database</span>
+                  </div>
+                  <div className="flex items-start gap-3">
+                    <Lock size={18} className="text-teal-600 mt-0.5 flex-shrink-0" />
+                    <span className="text-sm text-stone-600">Payment is processed via <span className="font-semibold text-stone-800">secure encryption</span></span>
+                  </div>
+                  <div className="flex items-start gap-3">
+                    <CreditCard size={18} className="text-teal-600 mt-0.5 flex-shrink-0" />
+                    <span className="text-sm text-stone-600">This is a <span className="font-semibold text-stone-800">test payment flow</span> — no real charges apply</span>
+                  </div>
+                </div>
+
+                {/* CTA Button */}
+                <button
+                  onClick={() => setShowPrivacyPopup(false)}
+                  className="w-full py-3 rounded-xl bg-gradient-to-r from-teal-600 to-emerald-600 hover:from-teal-700 hover:to-emerald-700 text-white font-bold text-sm transition-all shadow-lg shadow-teal-200 hover:shadow-teal-300"
+                >
+                  I Understand, Continue
+                </button>
+              </div>
+            </div>
+          </>
+        )}
+
         <div className="flex items-center gap-3 mb-6">
           <button
             onClick={() => router.push('/patient/appointments')}

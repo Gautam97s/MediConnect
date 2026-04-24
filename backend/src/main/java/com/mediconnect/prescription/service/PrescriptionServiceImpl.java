@@ -127,7 +127,8 @@ public class PrescriptionServiceImpl implements PrescriptionService {
             throw new ResponseStatusException(HttpStatus.FORBIDDEN, "Patients can only access their own prescriptions");
         }
 
-        return prescriptionRepository.findByPatientNameIgnoreCaseOrderByIssuedAtDesc(resolvedPatientName.trim()).stream()
+        return prescriptionRepository.findAllByOrderByIssuedAtDesc().stream()
+                .filter(prescription -> namesLikelyMatch(prescription.getPatientName(), resolvedPatientName))
                 .map(this::toResponse)
                 .collect(Collectors.toList());
     }

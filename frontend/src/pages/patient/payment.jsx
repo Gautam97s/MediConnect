@@ -1,7 +1,8 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { useRouter } from 'next/router';
 import PatientLayout from '../../components/PatientLayout';
-import { ArrowLeft, Calendar, CheckCircle, Clock, CreditCard, ShieldCheck, User } from 'lucide-react';
+import { useAuth } from '../../features/auth/hooks/useAuth';
+import { ArrowLeft, Calendar, CheckCircle, Clock, CreditCard, ShieldCheck, User, Lock, X } from 'lucide-react';
 import { createAppointment } from '../../api/appointments';
 import { CATEGORIES, DOCTORS } from '../../data/bookingData';
 
@@ -32,6 +33,7 @@ function formatDateTime(value) {
 
 export default function PaymentPage() {
   const router = useRouter();
+  const { user } = useAuth();
   const [appointmentDraft, setAppointmentDraft] = useState(null);
   const [cardName, setCardName] = useState('');
   const [cardNumber, setCardNumber] = useState('');
@@ -40,6 +42,7 @@ export default function PaymentPage() {
   const [isPaying, setIsPaying] = useState(false);
   const [error, setError] = useState('');
   const [isDone, setIsDone] = useState(false);
+  const [showPrivacyPopup, setShowPrivacyPopup] = useState(true);
 
   useEffect(() => {
     if (typeof window === 'undefined') {
@@ -59,6 +62,12 @@ export default function PaymentPage() {
       router.replace('/patient/appointments');
     }
   }, [router]);
+
+  useEffect(() => {
+    if (!cardName.trim() && user?.name) {
+      setCardName(user.name);
+    }
+  }, [cardName, user]);
 
   const amount = useMemo(() => {
     const consultFee = Number(appointmentDraft?.fee || 0);
@@ -178,6 +187,87 @@ export default function PaymentPage() {
   return (
     <PatientLayout title="Payment" activePage="appointments">
       <main className="flex-1 px-8 py-10 flex flex-col overflow-y-auto">
+        {/* Privacy Disclaimer Popup */}
+        {showPrivacyPopup && (
+          <>
+            <style>{`
+              @keyframes fadeInOverlay {
+                from { opacity: 0; }
+                to { opacity: 1; }
+              }
+              @keyframes slideUp {
+                from { opacity: 0; transform: translateY(30px) scale(0.97); }
+                to { opacity: 1; transform: translateY(0) scale(1); }
+              }
+            `}</style>
+            <div
+              className="fixed inset-0 z-50 flex items-center justify-center px-4"
+              style={{ animation: 'fadeInOverlay 0.3s ease-out' }}
+            >
+              {/* Backdrop */}
+              <div
+                className="absolute inset-0 bg-black/40 backdrop-blur-sm"
+                onClick={() => setShowPrivacyPopup(false)}
+              />
+
+              {/* Modal */}
+              <div
+                className="relative bg-white rounded-2xl shadow-2xl max-w-md w-full p-8 border border-stone-100"
+                style={{ animation: 'slideUp 0.4s ease-out' }}
+              >
+                {/* Close button */}
+                <button
+                  onClick={() => setShowPrivacyPopup(false)}
+                  className="absolute top-4 right-4 p-1.5 rounded-full hover:bg-stone-100 transition-colors text-stone-400 hover:text-stone-600"
+                >
+                  <X size={18} />
+                </button>
+
+                {/* Icon */}
+                <div className="flex justify-center mb-5">
+                  <div className="w-16 h-16 rounded-full bg-gradient-to-br from-teal-500 to-emerald-500 flex items-center justify-center shadow-lg shadow-teal-200">
+                    <Lock size={28} className="text-white" />
+                  </div>
+                </div>
+
+                {/* Title */}
+                <h2 className="text-xl font-extrabold text-stone-900 text-center mb-2">
+                  Your Privacy Matters
+                </h2>
+
+                {/* Description */}
+                <p className="text-stone-500 text-center text-sm leading-relaxed mb-5">
+                  We <span className="font-bold text-stone-700">do not store, save, or retain</span> any of your card details. All payment information is processed securely in real-time and is never saved on our servers.
+                </p>
+
+                {/* Info bullets */}
+                <div className="bg-stone-50 rounded-xl p-4 space-y-3 mb-6">
+                  <div className="flex items-start gap-3">
+                    <ShieldCheck size={18} className="text-teal-600 mt-0.5 flex-shrink-0" />
+                    <span className="text-sm text-stone-600">Card credentials are <span className="font-semibold text-stone-800">never stored</span> in our database</span>
+                  </div>
+                  <div className="flex items-start gap-3">
+                    <Lock size={18} className="text-teal-600 mt-0.5 flex-shrink-0" />
+                    <span className="text-sm text-stone-600">Payment is processed via <span className="font-semibold text-stone-800">secure encryption</span></span>
+                  </div>
+                  <div className="flex items-start gap-3">
+                    <CreditCard size={18} className="text-teal-600 mt-0.5 flex-shrink-0" />
+                    <span className="text-sm text-stone-600">This is a <span className="font-semibold text-stone-800">test payment flow</span> — no real charges apply</span>
+                  </div>
+                </div>
+
+                {/* CTA Button */}
+                <button
+                  onClick={() => setShowPrivacyPopup(false)}
+                  className="w-full py-3 rounded-xl bg-gradient-to-r from-teal-600 to-emerald-600 hover:from-teal-700 hover:to-emerald-700 text-white font-bold text-sm transition-all shadow-lg shadow-teal-200 hover:shadow-teal-300"
+                >
+                  I Understand, Continue
+                </button>
+              </div>
+            </div>
+          </>
+        )}
+
         <div className="flex items-center gap-3 mb-6">
           <button
             onClick={() => router.push('/patient/appointments')}
@@ -205,7 +295,7 @@ export default function PaymentPage() {
                   onChange={(e) => setCardName(e.target.value)}
                   onKeyDown={handleKeyDown}
                   className="w-full border border-stone-300 rounded-xl px-4 py-3"
-                  placeholder="John Doe"
+                  placeholder={user?.name || 'Cardholder name'}
                 />
               </div>
 
@@ -262,14 +352,14 @@ export default function PaymentPage() {
               disabled={isPaying || isDone}
               className="mt-6 w-full px-6 py-3 rounded-xl bg-teal-600 hover:bg-teal-700 text-white font-bold disabled:opacity-60"
             >
-              {isDone ? 'Payment successful' : isPaying ? 'Processing payment...' : `Pay $${amount.total} & Confirm`}
+              {isDone ? 'Payment successful' : isPaying ? 'Processing payment...' : <>Pay <span className="text-sm">${amount.total}</span> & Confirm</>}
             </button>
           </section>
 
           <aside className="bg-white rounded-[1.5rem] border border-stone-100 p-6 shadow-[0_8px_30px_rgb(0,0,0,0.04)] h-fit">
             <h3 className="text-lg font-bold text-stone-900 mb-4">Appointment summary</h3>
             <div className="space-y-3 text-sm">
-              <div className="flex items-center gap-2 text-stone-700"><User size={14} /> {appointmentDraft.patientName}</div>
+              <div className="flex items-center gap-2 text-stone-700"><User size={14} /> {appointmentDraft.patientName || user?.name}</div>
               <div className="text-stone-700">
                 Doctor: {appointmentDraft.doctorName || `#${appointmentDraft.doctorId}`}
                 <span className="ml-2 text-stone-400">{doctorCategory}</span>
@@ -280,9 +370,9 @@ export default function PaymentPage() {
             </div>
 
             <div className="mt-5 pt-4 border-t border-stone-200 space-y-2 text-sm font-semibold">
-              <div className="flex justify-between"><span className="text-stone-500">Consultation</span><span>${amount.consultFee}</span></div>
-              <div className="flex justify-between"><span className="text-stone-500">Platform fee</span><span>${amount.platformFee}</span></div>
-              <div className="flex justify-between text-base font-bold"><span>Total</span><span className="text-teal-700">${amount.total}</span></div>
+              <div className="flex justify-between"><span className="text-stone-500">Consultation</span><span className="text-sm">${amount.consultFee}</span></div>
+              <div className="flex justify-between"><span className="text-stone-500">Platform fee</span><span className="text-sm">${amount.platformFee}</span></div>
+              <div className="flex justify-between text-base font-bold"><span>Total</span><span className="text-sm text-teal-700">${amount.total}</span></div>
             </div>
 
             {isDone && (

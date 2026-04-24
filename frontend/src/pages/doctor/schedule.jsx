@@ -2,6 +2,9 @@ import React, { useEffect, useMemo, useState } from 'react';
 import DoctorLayout from '../../components/DoctorLayout';
 import { Calendar, Clock, Stethoscope, User } from 'lucide-react';
 import { fetchAppointments } from '../../api/appointments';
+import { useAuth } from '../../features/auth/hooks/useAuth';
+import { DOCTORS } from '../../data/bookingData';
+import { subscribeToRealtimeEvents } from '../../utils/realtime';
 
 function formatDateTime(value) {
   const date = new Date(value);
@@ -22,11 +25,65 @@ function formatDateTime(value) {
   };
 }
 
+function getDisplayStatus(status, appointmentDate) {
+  const normalizedStatus = (status || '').toString().toUpperCase() || 'SCHEDULED';
+  const appointmentMs = new Date(appointmentDate).getTime();
+
+  if (
+    normalizedStatus === 'SCHEDULED' &&
+    !Number.isNaN(appointmentMs) &&
+    appointmentMs < Date.now()
+  ) {
+    return 'PENDING REVIEW';
+  }
+
+  return normalizedStatus;
+}
+
+function resolveBookingDoctorId(user) {
+  const name = (user?.name || '').trim().toLowerCase();
+
+  const matchedDoctor = Object.values(DOCTORS)
+    .flat()
+    .find((doctor) => doctor.name.toLowerCase().includes(name) || name.includes(doctor.name.toLowerCase()));
+
+  if (matchedDoctor) {
+    return Number(matchedDoctor.id) || 0;
+  }
+
+  return Number(user?.id) || 0;
+}
+
+function mergeAppointmentById(currentAppointments, incomingAppointment) {
+  if (!incomingAppointment?.id) {
+    return currentAppointments;
+  }
+
+  const existingIndex = currentAppointments.findIndex(
+    (appointment) => appointment.id === incomingAppointment.id
+  );
+
+  if (existingIndex === -1) {
+    return [...currentAppointments, incomingAppointment];
+  }
+
+  return currentAppointments.map((appointment) =>
+    appointment.id === incomingAppointment.id ? incomingAppointment : appointment
+  );
+}
+
+function removeAppointmentById(currentAppointments, appointmentId) {
+  return currentAppointments.filter((appointment) => appointment.id !== appointmentId);
+}
+
 export default function Schedule() {
-  const [doctorId, setDoctorId] = useState(101);
+  const { user, isAuthReady } = useAuth();
   const [appointments, setAppointments] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
+
+  const displayName = (user?.name || 'Doctor').trim() || 'Doctor';
+  const doctorId = useMemo(() => resolveBookingDoctorId(user), [user]);
 
   const loadSchedule = async (id) => {
     setLoading(true);
@@ -42,7 +99,41 @@ export default function Schedule() {
   };
 
   useEffect(() => {
+    if (!isAuthReady || !doctorId) {
+      return;
+    }
+
     loadSchedule(doctorId);
+  }, [doctorId, isAuthReady]);
+
+  useEffect(() => {
+    if (!doctorId) {
+      return undefined;
+    }
+
+    return subscribeToRealtimeEvents((event) => {
+      const type = (event?.type || '').toString();
+      if (!type.startsWith('appointment.')) {
+        return;
+      }
+
+      if (type === 'appointment.cleared') {
+        setAppointments([]);
+        return;
+      }
+
+      const payload = event?.payload;
+      if (Number(payload?.doctorId) !== Number(doctorId)) {
+        return;
+      }
+
+      if (type === 'appointment.deleted') {
+        setAppointments((current) => removeAppointmentById(current, payload?.id));
+        return;
+      }
+
+      setAppointments((current) => mergeAppointmentById(current, payload));
+    });
   }, [doctorId]);
 
   const sorted = useMemo(
@@ -55,18 +146,8 @@ export default function Schedule() {
       <main className="flex-1 px-8 py-10 flex flex-col h-full overflow-hidden">
         <div className="flex items-center justify-between mb-6 flex-wrap gap-4">
           <div>
-            <h2 className="text-3xl font-extrabold text-stone-900 mb-2">Your Schedule</h2>
-            <p className="text-stone-500 font-medium text-lg">Live appointments from backend for selected doctor.</p>
-          </div>
-
-          <div className="flex items-center gap-2">
-            <label className="text-sm font-semibold text-stone-700">Doctor ID</label>
-            <input
-              type="number"
-              value={doctorId}
-              onChange={(e) => setDoctorId(Number(e.target.value) || 0)}
-              className="w-28 border border-stone-300 rounded-lg px-3 py-2"
-            />
+            <h2 className="text-3xl font-extrabold text-stone-900 mb-2">{displayName}'s Schedule</h2>
+            <p className="text-stone-500 font-medium text-lg">Live appointments for the signed-in doctor account.</p>
           </div>
         </div>
 
@@ -85,7 +166,7 @@ export default function Schedule() {
 
           {!loading && !error && sorted.length === 0 && (
             <div className="rounded-xl border border-stone-200 bg-white p-8 text-stone-500 text-center">
-              No appointments found for doctor #{doctorId}.
+              No appointments found for {displayName}.
             </div>
           )}
 
@@ -110,7 +191,7 @@ export default function Schedule() {
                       <div className="flex items-center gap-2"><Calendar size={14} /> {day}</div>
                       <div className="flex items-center gap-2 mt-1"><Clock size={14} /> {time}</div>
                       <div className="mt-2 text-xs uppercase tracking-wide text-teal-700 font-bold">
-                        {appointment.status}
+                        {getDisplayStatus(appointment.status, appointment.appointmentDate)}
                       </div>
                     </div>
                   </div>

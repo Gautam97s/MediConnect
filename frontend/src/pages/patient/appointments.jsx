@@ -1,6 +1,7 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { useRouter } from 'next/router';
 import PatientLayout from '../../components/PatientLayout';
+import { useAuth } from '../../features/auth/hooks/useAuth';
 import {
   ArrowLeft,
   Calendar,
@@ -14,21 +15,35 @@ import {
   Video
 } from 'lucide-react';
 import { CATEGORIES, DOCTORS } from '../../data/bookingData';
+import { fetchDoctorSlotsByIds, mergeDoctorSlots } from '../../utils/doctorSlots';
+import { subscribeToRealtimeEvents } from '../../utils/realtime';
 import { 
   createAppointment, 
   getAllAppointments, 
   deleteAppointment 
 } from '../../features/appointments/api/appointmentApi';
 
+const UPCOMING_GRACE_PERIOD_MS = 3 * 60 * 1000;
+
 function parseSlotToDate(timeSlot) {
   const now = new Date();
   const date = new Date(now);
-  date.setDate(now.getDate() + 1);
 
-  const match = /(\d{1,2}):(\d{2})\s*(AM|PM)/i.exec(timeSlot || '10:00 AM');
+  const toLocalDateTimeString = (value) => {
+    const year = value.getFullYear();
+    const month = String(value.getMonth() + 1).padStart(2, '0');
+    const day = String(value.getDate()).padStart(2, '0');
+    const hours = String(value.getHours()).padStart(2, '0');
+    const minutes = String(value.getMinutes()).padStart(2, '0');
+    const seconds = String(value.getSeconds()).padStart(2, '0');
+
+    return `${year}-${month}-${day}T${hours}:${minutes}:${seconds}`;
+  };
+
+  const match = /(\d{1,2}):(\d{2})\s*(AM|PM)/i.exec(timeSlot || '');
   if (!match) {
-    date.setHours(10, 0, 0, 0);
-    return date.toISOString();
+    date.setMinutes(0, 0, 0);
+    return toLocalDateTimeString(date);
   }
 
   let hours = Number(match[1]);
@@ -43,7 +58,16 @@ function parseSlotToDate(timeSlot) {
   }
 
   date.setHours(hours, minutes, 0, 0);
-  return date.toISOString();
+  return toLocalDateTimeString(date);
+}
+
+function isSlotTimePassed(timeSlot) {
+  const slotTime = new Date(parseSlotToDate(timeSlot)).getTime();
+  if (Number.isNaN(slotTime)) {
+    return false;
+  }
+
+  return slotTime <= Date.now();
 }
 
 function formatDateTime(value) {
@@ -65,7 +89,51 @@ function formatDateTime(value) {
   };
 }
 
+function normalizeName(value) {
+  return (value || '')
+    .toString()
+    .toLowerCase()
+    .replace(/\b(dr|mr|mrs|ms)\.?\s+/g, '')
+    .replace(/[^a-z\s]/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+function namesLikelyMatch(a, b) {
+  const left = normalizeName(a);
+  const right = normalizeName(b);
+
+  if (!left || !right) {
+    return false;
+  }
+
+  return left === right || left.includes(right) || right.includes(left);
+}
+
+function mergeAppointmentById(currentAppointments, incomingAppointment) {
+  if (!incomingAppointment?.id) {
+    return currentAppointments;
+  }
+
+  const existingIndex = currentAppointments.findIndex(
+    (appointment) => appointment.id === incomingAppointment.id
+  );
+
+  if (existingIndex === -1) {
+    return [...currentAppointments, incomingAppointment];
+  }
+
+  return currentAppointments.map((appointment) =>
+    appointment.id === incomingAppointment.id ? incomingAppointment : appointment
+  );
+}
+
+function removeAppointmentById(currentAppointments, appointmentId) {
+  return currentAppointments.filter((appointment) => appointment.id !== appointmentId);
+}
+
 function BookingWizard({ onCancel, onProceedToPayment }) {
+  const { user } = useAuth();
   const [step, setStep] = useState(1);
   const [category, setCategory] = useState(null);
   const [doctor, setDoctor] = useState(null);
@@ -75,8 +143,75 @@ function BookingWizard({ onCancel, onProceedToPayment }) {
   const [reason, setReason] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [error, setError] = useState('');
+  const [doctorSlotMap, setDoctorSlotMap] = useState({});
 
-  const doctors = DOCTORS[category] || [];
+  useEffect(() => {
+    if (!patientName.trim() && user?.name) {
+      setPatientName(user.name);
+    }
+  }, [patientName, user]);
+
+  useEffect(() => {
+    const doctorsInCategory = DOCTORS[category] || [];
+    if (doctorsInCategory.length === 0) {
+      setDoctorSlotMap({});
+      return;
+    }
+
+    let cancelled = false;
+
+    const loadDoctorSlots = async () => {
+      try {
+        const slotMap = await fetchDoctorSlotsByIds(doctorsInCategory.map((doctor) => doctor.id));
+        if (!cancelled) {
+          setDoctorSlotMap(slotMap);
+        }
+      } catch {
+        if (!cancelled) {
+          setDoctorSlotMap({});
+        }
+      }
+    };
+
+    void loadDoctorSlots();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [category]);
+
+  useEffect(() => {
+    const doctorsInCategory = DOCTORS[category] || [];
+    if (doctorsInCategory.length === 0) {
+      return undefined;
+    }
+
+    const doctorIds = new Set(doctorsInCategory.map((item) => Number(item.id)));
+
+    return subscribeToRealtimeEvents((event) => {
+      if (event?.type !== 'doctor-slots.updated') {
+        return;
+      }
+
+      const payloadDoctorId = Number(event?.payload?.bookingDoctorId);
+      if (!doctorIds.has(payloadDoctorId)) {
+        return;
+      }
+
+      setDoctorSlotMap((current) => ({
+        ...current,
+        [payloadDoctorId]: mergeDoctorSlots(event?.payload?.slots || [])
+      }));
+    });
+  }, [category]);
+
+  const doctors = useMemo(() => {
+    const list = DOCTORS[category] || [];
+    return list.map((doc) => ({
+      ...doc,
+      availableSlots: mergeDoctorSlots(doctorSlotMap[doc.id] || [])
+    }));
+  }, [category, doctorSlotMap]);
 
   const submitBooking = async () => {
     if (!doctor || !timeSlot) {
@@ -172,19 +307,31 @@ function BookingWizard({ onCancel, onProceedToPayment }) {
                 {isExpanded && (
                   <div className="px-4 pb-4 pt-1 border-t border-stone-100 bg-stone-50/50">
                     <div className="flex flex-wrap gap-2">
-                      {doc.availableSlots.map((slot) => (
-                        <button
-                          key={slot}
-                          onClick={() => {
-                            setDoctor(doc);
-                            setTimeSlot(slot);
-                            setStep(3);
-                          }}
-                          className="px-4 py-2 rounded-lg border border-stone-200 bg-white text-sm font-semibold text-stone-700 hover:border-teal-500 hover:text-teal-700"
-                        >
-                          {slot}
-                        </button>
-                      ))}
+                      {doc.availableSlots.map((slot) => {
+                        const isExpired = isSlotTimePassed(slot);
+                        return (
+                          <button
+                            key={slot}
+                            disabled={isExpired}
+                            onClick={() => {
+                              if (isExpired) {
+                                return;
+                              }
+                              setDoctor(doc);
+                              setTimeSlot(slot);
+                              setStep(3);
+                            }}
+                            className={`px-4 py-2 rounded-lg border text-sm font-semibold transition-colors ${
+                              isExpired
+                                ? 'border-stone-200 bg-stone-100 text-stone-400 cursor-not-allowed'
+                                : 'border-stone-200 bg-white text-stone-700 hover:border-teal-500 hover:text-teal-700'
+                            }`}
+                            title={isExpired ? 'This time slot has already passed' : 'Select slot'}
+                          >
+                            {slot}
+                          </button>
+                        );
+                      })}
                     </div>
                   </div>
                 )}
@@ -214,7 +361,7 @@ function BookingWizard({ onCancel, onProceedToPayment }) {
               value={patientName}
               onChange={(e) => setPatientName(e.target.value)}
               className="w-full border border-stone-300 rounded-xl px-4 py-3 focus:outline-none focus:ring-2 focus:ring-teal-500"
-              placeholder="Enter patient name"
+              placeholder={user?.name || 'Enter patient name'}
             />
           </div>
 
@@ -224,7 +371,7 @@ function BookingWizard({ onCancel, onProceedToPayment }) {
               value={reason}
               onChange={(e) => setReason(e.target.value)}
               rows={3}
-              className="w-full border border-stone-300 rounded-xl px-4 py-3 focus:outline-none focus:ring-2 focus:ring-teal-500"
+              className="w-full resize-none border border-stone-300 rounded-xl px-4 py-3 focus:outline-none focus:ring-2 focus:ring-teal-500"
               placeholder="Describe the concern"
             />
           </div>
@@ -262,12 +409,25 @@ function BookingWizard({ onCancel, onProceedToPayment }) {
 
 export default function Appointments() {
   const router = useRouter();
+  const { user } = useAuth();
   const [activeTab, setActiveTab] = useState('upcoming');
   const [isBooking, setIsBooking] = useState(false);
   const [appointments, setAppointments] = useState([]);
   const [cancelingIds, setCancelingIds] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
+  const [nowEpochMs, setNowEpochMs] = useState(Date.now());
+  const patientDisplayName = user?.name?.trim() || '';
+
+  useEffect(() => {
+    const intervalId = window.setInterval(() => {
+      setNowEpochMs(Date.now());
+    }, 30000);
+
+    return () => {
+      window.clearInterval(intervalId);
+    };
+  }, []);
 
   const doctorMap = useMemo(() => {
     return Object.entries(DOCTORS).reduce((acc, [categoryId, doctors]) => {
@@ -299,6 +459,36 @@ export default function Appointments() {
     loadAppointments();
   }, []);
 
+  useEffect(() => {
+    if (!patientDisplayName) {
+      return undefined;
+    }
+
+    return subscribeToRealtimeEvents((event) => {
+      const type = (event?.type || '').toString();
+      if (!type.startsWith('appointment.')) {
+        return;
+      }
+
+      if (type === 'appointment.cleared') {
+        setAppointments([]);
+        return;
+      }
+
+      const payload = event?.payload;
+      if (!namesLikelyMatch(payload?.patientName, patientDisplayName)) {
+        return;
+      }
+
+      if (type === 'appointment.deleted') {
+        setAppointments((current) => removeAppointmentById(current, payload?.id));
+        return;
+      }
+
+      setAppointments((current) => mergeAppointmentById(current, payload));
+    });
+  }, [patientDisplayName]);
+
   const handleProceedToPayment = async (payload) => {
     if (typeof window !== 'undefined') {
       window.sessionStorage.setItem('pendingAppointmentPayment', JSON.stringify(payload));
@@ -323,11 +513,28 @@ export default function Appointments() {
   };
 
   const upcoming = appointments
-    .filter((item) => item.status === 'SCHEDULED')
+    .filter((item) => {
+      const status = (item?.status || '').toString().toUpperCase();
+      const appointmentMs = new Date(item?.appointmentDate).getTime();
+      return (
+        status === 'SCHEDULED' &&
+        !Number.isNaN(appointmentMs) &&
+        appointmentMs + UPCOMING_GRACE_PERIOD_MS > nowEpochMs
+      );
+    })
     .sort((a, b) => new Date(a.appointmentDate) - new Date(b.appointmentDate));
 
   const history = appointments
-    .filter((item) => item.status !== 'SCHEDULED')
+    .filter((item) => {
+      const status = (item?.status || '').toString().toUpperCase();
+      const appointmentMs = new Date(item?.appointmentDate).getTime();
+
+      if (status !== 'SCHEDULED') {
+        return true;
+      }
+
+      return !Number.isNaN(appointmentMs) && appointmentMs + UPCOMING_GRACE_PERIOD_MS <= nowEpochMs;
+    })
     .sort((a, b) => new Date(b.appointmentDate) - new Date(a.appointmentDate));
 
   const visible = activeTab === 'upcoming' ? upcoming : history;
@@ -345,7 +552,6 @@ export default function Appointments() {
             <div className="flex items-center justify-between mb-8">
               <div>
                 <h1 className="text-3xl font-extrabold text-stone-900 mb-1">Appointments</h1>
-                <p className="text-stone-500 font-medium text-lg">Live data from backend appointments API.</p>
               </div>
               <button
                 onClick={() => setIsBooking(true)}

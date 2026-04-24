@@ -14,6 +14,11 @@ export async function fetchAppointments(params = {}) {
   return response.data;
 }
 
+export async function fetchAppointmentById(id) {
+  const response = await client.get(`/appointments/${id}`);
+  return response.data;
+}
+
 export async function createAppointment(payload) {
   const response = await client.post('/appointments', payload);
   return response.data;
@@ -21,6 +26,13 @@ export async function createAppointment(payload) {
 
 export async function cancelAppointment(id) {
   const response = await client.delete(`/appointments/${id}`);
+  return response.data;
+}
+
+export async function deleteDoctorPatientAppointments(doctorId, patientName) {
+  const response = await client.delete(`/appointments/doctor/${doctorId}/patient`, {
+    params: { patientName }
+  });
   return response.data;
 }
 

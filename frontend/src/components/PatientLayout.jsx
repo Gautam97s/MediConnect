@@ -3,6 +3,7 @@ import { useRouter } from 'next/router';
 import { useEffect } from 'react';
 import { useAuth } from '../features/auth/hooks/useAuth';
 import PatientSidebar from './PatientSidebar';
+import NotificationBell from './NotificationBell';
 
 export default function PatientLayout({ children, title, activePage, hideSidebar = false }) {
   const router = useRouter();
@@ -39,9 +40,17 @@ export default function PatientLayout({ children, title, activePage, hideSidebar
 
       {!hideSidebar && <PatientSidebar activePage={activePage} />}
 
-      {/* Main Content Area */}
-      {children}
+      {/* Main Content Area with Notification Bell */}
+      <div className="flex-1 flex flex-col overflow-hidden relative">
+        {/* Top Notification Bar */}
+        <div className="absolute top-4 right-6 z-40">
+          <NotificationBell />
+        </div>
+
+        {children}
+      </div>
 
     </div>
   );
 }
+

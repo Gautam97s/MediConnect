@@ -1,7 +1,9 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { fetchConsultationSession } from '../api/consultation';
 import { useAuth } from '../features/auth/hooks/useAuth';
+import { addRefundNotification } from './NotificationBell';
 import {
+  AlertTriangle,
   Camera,
   CameraOff,
   LoaderCircle,
@@ -9,6 +11,8 @@ import {
   MicOff,
   PhoneOff
 } from 'lucide-react';
+
+const DOCTOR_NO_SHOW_TIMEOUT_MS = 3 * 60 * 1000; // 3 minutes
 
 async function loadZegoExpressEngine() {
   const engineModule = await import('zego-express-engine-webrtc');
@@ -106,11 +110,66 @@ export default function ConsultationCallPanel({
   const [micEnabled, setMicEnabled] = useState(true);
   const [cameraEnabled, setCameraEnabled] = useState(true);
   const [remoteStatus, setRemoteStatus] = useState('Waiting for the other participant to join.');
+  const [doctorNoShow, setDoctorNoShow] = useState(false);
+  const [noShowCountdown, setNoShowCountdown] = useState(-1);
+  const doctorNoShowFiredRef = useRef(false);
 
   const remoteLabel = useMemo(
     () => buildRemoteLabel(role, appointment),
     [appointment, role]
   );
+
+  // Doctor no-show detection timer (patient side only)
+  useEffect(() => {
+    // Only applies for the patient role
+    if (role !== 'patient') {
+      return;
+    }
+
+    // If the doctor has joined, clear everything
+    if (remoteConnected) {
+      setDoctorNoShow(false);
+      setNoShowCountdown(-1);
+      return;
+    }
+
+    // Don't start timer until the patient is actually connected to the room
+    if (!isConnected || joiningCall) {
+      return;
+    }
+
+    // If we already fired the no-show, don't restart the timer
+    if (doctorNoShowFiredRef.current) {
+      return;
+    }
+
+    const startedAt = Date.now();
+    setNoShowCountdown(Math.ceil(DOCTOR_NO_SHOW_TIMEOUT_MS / 1000));
+
+    const countdownInterval = window.setInterval(() => {
+      const elapsedMs = Date.now() - startedAt;
+      const remainingSeconds = Math.max(0, Math.ceil((DOCTOR_NO_SHOW_TIMEOUT_MS - elapsedMs) / 1000));
+      setNoShowCountdown(remainingSeconds);
+
+      if (remainingSeconds <= 0) {
+        window.clearInterval(countdownInterval);
+        doctorNoShowFiredRef.current = true;
+        setDoctorNoShow(true);
+        setNoShowCountdown(0);
+
+        // Fire the refund notification
+        addRefundNotification({
+          doctorName: appointment?.doctorName || remoteLabel,
+          appointmentId,
+          appointmentDate: appointment?.appointmentDate
+        });
+      }
+    }, 1000);
+
+    return () => {
+      window.clearInterval(countdownInterval);
+    };
+  }, [role, isConnected, remoteConnected, joiningCall, appointment, appointmentId, remoteLabel]);
 
   useEffect(() => {
     let disposed = false;
@@ -684,6 +743,37 @@ export default function ConsultationCallPanel({
               <div className="absolute top-6 left-1/2 -translate-x-1/2 z-20 rounded-2xl border border-rose-500/30 bg-rose-500/20 px-6 py-3 text-sm font-medium text-rose-100 backdrop-blur-xl shadow-lg flex items-center gap-3">
                 <span className="w-2 h-2 rounded-full bg-rose-400 animate-pulse" />
                 {callError}
+              </div>
+            )}
+
+            {/* Doctor No-Show Countdown */}
+            {!remoteConnected && !joiningCall && isConnected && noShowCountdown > 0 && !doctorNoShow && (
+              <div className="absolute bottom-20 left-1/2 -translate-x-1/2 z-20 rounded-2xl border border-amber-400/30 bg-amber-500/20 px-5 py-2.5 text-[12px] font-semibold text-amber-100 backdrop-blur-xl shadow-lg flex items-center gap-2.5">
+                <LoaderCircle size={14} className="animate-spin text-amber-300" />
+                Waiting for doctor to join... {Math.floor(noShowCountdown / 60)}:{String(noShowCountdown % 60).padStart(2, '0')}
+              </div>
+            )}
+
+            {/* Doctor No-Show – Refund Warning */}
+            {doctorNoShow && !remoteConnected && (
+              <div className="absolute inset-0 z-25 flex items-center justify-center bg-stone-900/60 backdrop-blur-sm">
+                <div className="max-w-sm w-full mx-4 rounded-2xl bg-gradient-to-br from-amber-50 to-orange-50 border border-amber-200 p-6 shadow-2xl text-center">
+                  <div className="mx-auto w-14 h-14 rounded-full bg-gradient-to-br from-amber-400 to-orange-500 flex items-center justify-center mb-4 shadow-lg shadow-amber-200">
+                    <AlertTriangle size={24} className="text-white" />
+                  </div>
+                  <h3 className="text-lg font-extrabold text-stone-900 mb-2">Doctor Did Not Join</h3>
+                  <p className="text-sm text-stone-600 leading-relaxed mb-4">
+                    Your doctor has not joined the consultation within the expected time. If any payment was deducted, it will be <span className="font-bold text-stone-800">refunded within 2–3 working days</span>.
+                  </p>
+                  <p className="text-xs text-stone-400 mb-5">A notification has been added to your dashboard.</p>
+                  <button
+                    type="button"
+                    onClick={onLeave}
+                    className="w-full py-2.5 rounded-xl bg-stone-900 hover:bg-stone-800 text-white font-bold text-sm transition-colors"
+                  >
+                    Return to Dashboard
+                  </button>
+                </div>
               </div>
             )}
 

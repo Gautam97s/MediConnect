@@ -5,6 +5,7 @@ import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.mediconnect.doctorslots.model.DoctorAvailabilityResponse;
 import com.mediconnect.message.model.Message;
+import com.mediconnect.prescription.model.PrescriptionResponse;
 import org.springframework.stereotype.Service;
 
 import java.time.Instant;
@@ -47,6 +48,10 @@ public class RealtimeEventPublisher {
 
     public void publishMessageCreated(Message message) {
         publish("message.created", message);
+    }
+
+    public void publishPrescriptionReady(PrescriptionResponse prescription) {
+        publish("prescription.ready", prescription);
     }
 
     private void publish(String type, Object payload) {

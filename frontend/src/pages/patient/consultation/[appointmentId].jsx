@@ -2,6 +2,7 @@ import React, { useEffect, useMemo, useState } from 'react';
 import { useRouter } from 'next/router';
 import PatientLayout from '../../../components/PatientLayout';
 import ConsultationCallPanel from '../../../components/ConsultationCallPanel';
+import { addPrescriptionNotification } from '../../../components/NotificationBell';
 import { fetchAppointmentById } from '../../../api/appointments';
 import { downloadPrescriptionPdf, fetchPrescriptions, triggerPdfDownload } from '../../../api/prescriptions';
 import { buildConsultationParticipant, buildConsultationRoomName } from '../../../utils/consultationRoom';
@@ -58,6 +59,12 @@ export default function PatientConsultationPage() {
       setPrescription(nextPrescription);
       if (nextPrescription) {
         setPrescriptionNotice('Your prescription PDF is ready to download.');
+        addPrescriptionNotification({
+          prescriptionId: nextPrescription.id,
+          appointmentId: nextPrescription.appointmentId,
+          doctorName: nextPrescription.doctorName,
+          issuedAt: nextPrescription.issuedAt
+        });
       }
       return nextPrescription;
     } catch (requestError) {
@@ -117,6 +124,12 @@ export default function PatientConsultationPage() {
       if (type === 'prescription.ready' && Number(event?.payload?.appointmentId) === Number(appointmentId)) {
         setPrescription(event.payload);
         setPrescriptionNotice('Your doctor has completed the consultation and generated your prescription PDF.');
+        addPrescriptionNotification({
+          prescriptionId: event.payload.id,
+          appointmentId: event.payload.appointmentId,
+          doctorName: event.payload.doctorName,
+          issuedAt: event.payload.issuedAt
+        });
       }
 
       if (type === 'appointment.updated' && Number(event?.payload?.id) === Number(appointmentId)) {

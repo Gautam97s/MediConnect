@@ -3,7 +3,9 @@ import { useRouter } from 'next/router';
 import PatientLayout from '../../../components/PatientLayout';
 import ConsultationCallPanel from '../../../components/ConsultationCallPanel';
 import { addPrescriptionNotification } from '../../../components/NotificationBell';
+import { getUserProfile } from '../../../features/user/api/userApi';
 import { fetchAppointmentById } from '../../../api/appointments';
+import { placePrescriptionOrder } from '../../../api/orders';
 import { downloadPrescriptionPdf, fetchPrescriptions, triggerPdfDownload } from '../../../api/prescriptions';
 import { buildConsultationParticipant, buildConsultationRoomName } from '../../../utils/consultationRoom';
 import { subscribeToRealtimeEvents } from '../../../utils/realtime';
@@ -14,6 +16,8 @@ import {
   Download,
   FileText,
   MessageSquareText,
+  MapPin,
+  PackageCheck,
   ShieldCheck,
   Stethoscope,
   UserRound
@@ -47,6 +51,34 @@ export default function PatientConsultationPage() {
   const [prescription, setPrescription] = useState(null);
   const [prescriptionNotice, setPrescriptionNotice] = useState('');
   const [downloadingPdf, setDownloadingPdf] = useState(false);
+  const [savedAddress, setSavedAddress] = useState('');
+  const [manualAddress, setManualAddress] = useState('');
+  const [isAddressModalOpen, setIsAddressModalOpen] = useState(false);
+  const [orderingMedicines, setOrderingMedicines] = useState(false);
+  const [orderNotice, setOrderNotice] = useState('');
+
+  useEffect(() => {
+    let cancelled = false;
+
+    const loadAddress = async () => {
+      try {
+        const profile = await getUserProfile();
+        if (!cancelled) {
+          setSavedAddress((profile?.address || '').trim());
+        }
+      } catch {
+        if (!cancelled) {
+          setSavedAddress('');
+        }
+      }
+    };
+
+    void loadAddress();
+
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   const loadPrescription = async (targetAppointmentId) => {
     if (!targetAppointmentId) {
@@ -204,6 +236,50 @@ export default function PatientConsultationPage() {
     }
   };
 
+  const submitOrder = async (deliveryAddress) => {
+    if (!prescription?.id) {
+      return;
+    }
+
+    setOrderingMedicines(true);
+    setOrderNotice('');
+
+    try {
+      const order = await placePrescriptionOrder({
+        prescriptionId: prescription.id,
+        deliveryAddress: deliveryAddress || undefined
+      });
+
+      setOrderNotice(
+        `Order #${order.id} placed successfully. Medicines will be shipped to your address soon.`
+      );
+      if (deliveryAddress?.trim()) {
+        setSavedAddress(deliveryAddress.trim());
+      }
+      setIsAddressModalOpen(false);
+      setManualAddress('');
+    } catch (requestError) {
+      setOrderNotice(
+        requestError?.response?.data?.message || 'Could not place the pharmacy order right now.'
+      );
+    } finally {
+      setOrderingMedicines(false);
+    }
+  };
+
+  const handleOrderMedicines = async () => {
+    if (!prescription?.id) {
+      return;
+    }
+
+    if (savedAddress) {
+      await submitOrder('');
+      return;
+    }
+
+    setIsAddressModalOpen(true);
+  };
+
   return (
     <PatientLayout title="Consultation" activePage="appointments" hideSidebar={true}>
       <main className="flex-1 px-4 py-6 sm:px-6 lg:px-8 lg:py-8 flex flex-col overflow-y-auto">
@@ -320,6 +396,21 @@ export default function PatientConsultationPage() {
                   </div>
                 ) : null}
 
+                {orderNotice ? (
+                  <div className="mt-4 rounded-2xl border border-indigo-100 bg-indigo-50 px-4 py-3 text-sm font-semibold text-indigo-700">
+                    {orderNotice}
+                  </div>
+                ) : null}
+
+                {prescription?.id ? (
+                  <div className="mt-4 rounded-2xl border border-stone-200 bg-white px-3 py-2.5">
+                    <p className="text-[11px] font-bold uppercase tracking-[0.16em] text-stone-500">Delivery Address</p>
+                    <p className="mt-1 text-xs text-stone-600">
+                      {savedAddress || 'No saved address found. We will ask when you place the order.'}
+                    </p>
+                  </div>
+                ) : null}
+
                 <button
                   type="button"
                   onClick={() => void handleDownloadPrescription()}
@@ -333,10 +424,77 @@ export default function PatientConsultationPage() {
                   <Download size={14} />
                   {downloadingPdf ? 'Downloading...' : 'Download Prescription PDF'}
                 </button>
+
+                <button
+                  type="button"
+                  onClick={() => void handleOrderMedicines()}
+                  disabled={!prescription?.id || orderingMedicines}
+                  className={`mt-3 inline-flex w-full items-center justify-center gap-2 rounded-2xl px-4 py-3 text-xs font-bold uppercase tracking-wider transition-colors ${
+                    prescription?.id
+                      ? 'bg-indigo-600 text-white hover:bg-indigo-700'
+                      : 'cursor-not-allowed border border-stone-200 bg-stone-100 text-stone-400'
+                  }`}
+                >
+                  <PackageCheck size={14} />
+                  {orderingMedicines ? 'Placing Order...' : 'Order Medicines from Pharmacy'}
+                </button>
               </section>
             </aside>
           </div>
         )}
+
+        {isAddressModalOpen ? (
+          <div className="fixed inset-0 z-50 flex items-center justify-center bg-stone-950/55 p-4 backdrop-blur-sm">
+            <div className="w-full max-w-lg rounded-[1.75rem] border border-white/50 bg-white p-6 shadow-[0_28px_90px_rgba(15,23,42,0.28)]">
+              <div className="flex items-start justify-between gap-4">
+                <div>
+                  <p className="text-[11px] font-bold uppercase tracking-[0.2em] text-indigo-700">Delivery Address</p>
+                  <h3 className="mt-1 text-xl font-extrabold text-stone-900">Add Address to Place Order</h3>
+                  <p className="mt-2 text-sm leading-6 text-stone-600">
+                    We could not find a saved address in your profile. Please enter your delivery address for this pharmacy order.
+                  </p>
+                </div>
+                <MapPin size={18} className="text-indigo-500" />
+              </div>
+
+              <textarea
+                value={manualAddress}
+                onChange={(event) => setManualAddress(event.target.value)}
+                rows={4}
+                placeholder="House / Flat, street, area, city, state, PIN code"
+                className="mt-4 w-full resize-none rounded-2xl border border-stone-200 bg-stone-50 px-3 py-2.5 text-sm text-stone-700 outline-none transition focus:border-indigo-500 focus:bg-white focus:ring-4 focus:ring-indigo-100"
+              />
+
+              <div className="mt-5 flex items-center justify-end gap-3">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setIsAddressModalOpen(false);
+                    setManualAddress('');
+                  }}
+                  className="rounded-xl border border-stone-200 bg-white px-4 py-2.5 text-xs font-bold uppercase tracking-wider text-stone-600 hover:bg-stone-50"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    const normalizedAddress = manualAddress.trim();
+                    if (!normalizedAddress) {
+                      setOrderNotice('Please enter a delivery address to place the order.');
+                      return;
+                    }
+                    void submitOrder(normalizedAddress);
+                  }}
+                  disabled={orderingMedicines}
+                  className="rounded-xl bg-indigo-600 px-5 py-2.5 text-xs font-bold uppercase tracking-wider text-white hover:bg-indigo-700 disabled:cursor-not-allowed disabled:opacity-60"
+                >
+                  {orderingMedicines ? 'Placing...' : 'Place Order'}
+                </button>
+              </div>
+            </div>
+          </div>
+        ) : null}
       </main>
     </PatientLayout>
   );

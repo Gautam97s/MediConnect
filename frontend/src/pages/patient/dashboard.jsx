@@ -3,6 +3,7 @@ import Head from 'next/head';
 import Link from 'next/link';
 import { useRouter } from 'next/router';
 import PatientLayout from '../../components/PatientLayout';
+import NotificationBell from '../../components/NotificationBell';
 import { useAuth } from '../../features/auth/hooks/useAuth';
 import { fetchAppointments } from '../../api/appointments';
 import { DOCTORS } from '../../data/bookingData';
@@ -272,9 +273,15 @@ export default function PatientDashboard() {
     <PatientLayout title="My Hub" activePage="dashboard">
         <main className="flex-1 px-8 py-10 flex flex-col h-full overflow-hidden">
           
-          <div className="mb-8">
-             <h1 className="text-3xl font-bold text-stone-900">Good Morning, {displayName}</h1>
-             <p className="text-stone-500 mt-1 font-medium">Your healthcare journey at a glance.</p>
+
+          <div className="mb-8 flex items-start justify-between gap-4">
+             <div>
+               <h1 className="text-3xl font-bold text-stone-900">Good Morning, {displayName}</h1>
+               <p className="text-stone-500 mt-1 font-medium">Your healthcare journey at a glance.</p>
+             </div>
+             <div className="shrink-0">
+               <NotificationBell />
+             </div>
           </div>
 
           <div className="flex flex-col lg:flex-row gap-6 mb-8">
